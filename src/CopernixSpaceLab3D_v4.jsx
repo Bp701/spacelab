@@ -84,10 +84,45 @@ const SOLAR_PLANETS = [
   },
 ];
 
+const SOLAR_PLANET_BY_ID = Object.fromEntries(SOLAR_PLANETS.map((planet) => [planet.id, planet]));
+const PLANET_FOCUS_IDS = new Set([...SOLAR_PLANETS.map((planet) => planet.id), "earth"]);
+const PLANET_QUEST_TARGET = "mars";
+const PLANET_AUDIO_FACTS = {
+  mercury: "Cześć! Jestem Merkury. Okrążam Słońce w 88 dni.",
+  venus: "Cześć! Jestem Wenus. Jestem bardzo gorącą planetą z gęstą atmosferą.",
+  earth: "Cześć! Jestem Ziemia. To tutaj mamy oceany, chmury i Olsztyn.",
+  mars: "Cześć! Jestem Mars. Mam czerwony pył i wysokie kosmiczne góry.",
+  jupiter: "Cześć! Jestem Jowisz. Jestem największą planetą Układu Słonecznego.",
+  saturn: "Cześć! Jestem Saturn. Mam wielkie pierścienie z lodu i skał.",
+  uranus: "Cześć! Jestem Uran. Obracam się prawie na boku.",
+  neptune: "Cześć! Jestem Neptun. Wieją u mnie bardzo szybkie wiatry.",
+};
+
+function getPlanetOrbitPosition(planet, t, out) {
+  const a = planet.phase + t * planet.speed;
+  const x = Math.cos(a) * planet.orbit;
+  const z = Math.sin(a) * planet.orbit;
+  const y = Math.sin(a * 0.9) * Math.sin(planet.inclination) * planet.orbit * 0.25;
+  return out.set(x, y, z);
+}
+
+function getPlanetFocusDistance(id) {
+  if (id === "earth") return 3.4;
+  const planet = SOLAR_PLANET_BY_ID[id];
+  if (!planet) return 3.2;
+  return Math.max(2.0, planet.radius * 3.3 + (planet.rings ? 1.4 : 0.9));
+}
+
 const TAIL_N = 14;          // segmenty ogona komety
 const SPARK_N = 12;         // iskry przy wejściu w atmosferę
 const FLYBY_TAIL = 22;      // segmenty ogona losowej komety
 const FIRE_COLOR = new THREE.Color("#FF8A3C");
+const EASY_PILOT_SPEED = 7.2;
+const EASY_MOUSE_BUTTONS = Object.freeze({
+  LEFT: THREE.MOUSE.ROTATE,
+  MIDDLE: THREE.MOUSE.DOLLY,
+  RIGHT: null,
+});
 
 function hash01(str, salt = 0) {
   let h = salt;
@@ -403,7 +438,7 @@ function Sun({ onSelect, selected }) {
   );
 }
 
-function SolarPlanets({ clock, onSelect, selected, phase, reveal }) {
+function SolarPlanets({ clock, onSelect, selected, phase, reveal, planetPositions }) {
   return (
     <>
       {SOLAR_PLANETS.map((planet) => (
@@ -415,25 +450,24 @@ function SolarPlanets({ clock, onSelect, selected, phase, reveal }) {
           selected={selected}
           phase={phase}
           reveal={reveal}
+          planetPositions={planetPositions}
         />
       ))}
     </>
   );
 }
 
-function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal }) {
+function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal, planetPositions }) {
   const group = useRef();
   const mesh = useRef();
+  const pos = useMemo(() => new THREE.Vector3(), []);
   const selectedPlanet = selected === planet.id;
 
   useFrame((_, dt) => {
-    const t = clock.current.t;
-    const a = planet.phase + t * planet.speed;
-    const x = Math.cos(a) * planet.orbit;
-    const z = Math.sin(a) * planet.orbit;
-    const y = Math.sin(a * 0.9) * Math.sin(planet.inclination) * planet.orbit * 0.25;
+    getPlanetOrbitPosition(planet, clock.current.t, pos);
 
-    if (group.current) group.current.position.set(x, y, z);
+    if (group.current) group.current.position.copy(pos);
+    if (planetPositions?.current?.[planet.id]) planetPositions.current[planet.id].copy(pos);
     if (mesh.current) mesh.current.rotation.y += dt * planet.spin;
   });
 
@@ -955,6 +989,90 @@ function RevealDriver({ reveal, phase }) {
   return null;
 }
 
+function EasyPilotControls({ enabled, controlsRef, onPilotMove }) {
+  const { camera } = useThree();
+  const keys = useRef(new Set());
+  const notifiedRef = useRef(false);
+  const forward = useMemo(() => new THREE.Vector3(), []);
+  const right = useMemo(() => new THREE.Vector3(), []);
+  const move = useMemo(() => new THREE.Vector3(), []);
+  const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+
+  useEffect(() => {
+    const isTyping = () => {
+      const el = document.activeElement;
+      if (!el) return false;
+      return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
+    };
+
+    const keyFor = (code) => {
+      if (code === "KeyW") return "w";
+      if (code === "KeyS") return "s";
+      if (code === "KeyA") return "a";
+      if (code === "KeyD") return "d";
+      return null;
+    };
+
+    const onKeyDown = (event) => {
+      const key = keyFor(event.code);
+      if (!enabled || !key || isTyping()) return;
+      event.preventDefault();
+      keys.current.add(key);
+    };
+
+    const onKeyUp = (event) => {
+      const key = keyFor(event.code);
+      if (!key) return;
+      keys.current.delete(key);
+      if (keys.current.size === 0) notifiedRef.current = false;
+    };
+
+    const clearKeys = () => {
+      keys.current.clear();
+      notifiedRef.current = false;
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", clearKeys);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", clearKeys);
+    };
+  }, [enabled]);
+
+  useFrame((_, dt) => {
+    if (!enabled || keys.current.size === 0) return;
+
+    const ctrl = controlsRef.current;
+    if (!ctrl) return;
+
+    if (!notifiedRef.current) {
+      onPilotMove();
+      notifiedRef.current = true;
+    }
+
+    camera.getWorldDirection(forward).normalize();
+    right.crossVectors(forward, up).normalize();
+    move.set(0, 0, 0);
+
+    if (keys.current.has("w")) move.add(forward);
+    if (keys.current.has("s")) move.sub(forward);
+    if (keys.current.has("d")) move.add(right);
+    if (keys.current.has("a")) move.sub(right);
+
+    if (move.lengthSq() === 0) return;
+
+    move.normalize().multiplyScalar(EASY_PILOT_SPEED * Math.min(dt, 0.05));
+    camera.position.add(move);
+    ctrl.target.add(move);
+    ctrl.update();
+  });
+
+  return null;
+}
+
 /**
  * REŻYSER KAMERY
  *  intro     — wisi tuż nad Ziemią, delikatny dryf (planeta wypełnia kadr)
@@ -963,20 +1081,46 @@ function RevealDriver({ reveal, phase }) {
  *  moon      — przelot do Księżyca i podążanie za nim
  *  detect    — REAKTYWNY zoom na wykryty obiekt + puls FOV (~2.6 s)
  *  cinematic — fly-through przez scenę
+ *  system    — powrót do szerokiego widoku Układu Słonecznego
+ *  focus     — płynny lot do planety + OrbitControls wokół planety
  *  free      — OrbitControls
  */
-function CameraDirector({ mode, earthPos, moonPos, scanTargetPos, controlsRef, onLaunchDone, onDetectDone }) {
+function CameraDirector({
+  mode,
+  earthPos,
+  moonPos,
+  scanTargetPos,
+  planetPositions,
+  focusTargetId,
+  controlsRef,
+  onLaunchDone,
+  onDetectDone,
+}) {
   const { camera } = useThree();
   const tmp = useMemo(() => new THREE.Vector3(), []);
   const tgt = useMemo(() => new THREE.Vector3(), []);
+  const focusTarget = useMemo(() => new THREE.Vector3(), []);
+  const focusDesired = useMemo(() => new THREE.Vector3(), []);
+  const focusOffset = useMemo(() => new THREE.Vector3(), []);
+  const focusDelta = useMemo(() => new THREE.Vector3(), []);
+  const focusLastTarget = useMemo(() => new THREE.Vector3(), []);
+  const systemTarget = useMemo(() => new THREE.Vector3(0, 0, 0), []);
   const launchT = useRef(0);
   const driftT = useRef(0);
   const detectT = useRef(0);
+  const focusT = useRef(0);
+  const systemT = useRef(0);
+  const lastFocusId = useRef(null);
 
   useEffect(() => {
     if (mode === "launch") launchT.current = 0;
     if (mode === "detect") detectT.current = 0;
-  }, [mode]);
+    if (mode === "system") systemT.current = 0;
+    if (mode === "focus") {
+      focusT.current = 0;
+      lastFocusId.current = null;
+    }
+  }, [mode, focusTargetId]);
 
   useFrame((state, dt) => {
     const ctrl = controlsRef.current;
@@ -1038,6 +1182,49 @@ function CameraDirector({ mode, earthPos, moonPos, scanTargetPos, controlsRef, o
       tmp.copy(mp).add(new THREE.Vector3(0.9, 0.35, 0.9));
       camera.position.lerp(tmp, 0.05);
       if (ctrl) { ctrl.target.lerp(mp, 0.08); ctrl.update(); }
+    } else if (mode === "system") {
+      if (systemT.current < 1) {
+        systemT.current = Math.min(1, systemT.current + dt / 1.35);
+        tmp.set(0, 14, 42);
+        camera.position.lerp(tmp, Math.min(1, dt * 2.6));
+        if (ctrl) {
+          ctrl.target.lerp(systemTarget, Math.min(1, dt * 4.2));
+          camera.lookAt(ctrl.target);
+          ctrl.update();
+        } else {
+          camera.lookAt(systemTarget);
+        }
+      }
+    } else if (mode === "focus" && focusTargetId) {
+      const fp = planetPositions.current[focusTargetId] || (focusTargetId === "earth" ? ep : null);
+      if (!fp) return;
+
+      if (lastFocusId.current !== focusTargetId) {
+        focusT.current = 0;
+        lastFocusId.current = focusTargetId;
+        focusLastTarget.copy(fp);
+      }
+
+      const distance = getPlanetFocusDistance(focusTargetId);
+      focusOffset.set(distance * 0.74, distance * 0.32, distance * 0.74);
+      focusTarget.copy(fp);
+
+      if (ctrl) {
+        ctrl.target.lerp(focusTarget, Math.min(1, dt * 6));
+      }
+
+      if (focusT.current < 1) {
+        focusT.current = Math.min(1, focusT.current + dt / 1.45);
+        focusDesired.copy(focusTarget).add(focusOffset);
+        camera.position.lerp(focusDesired, Math.min(1, dt * 4.0));
+        camera.lookAt(ctrl ? ctrl.target : focusTarget);
+      } else {
+        focusDelta.copy(focusTarget).sub(focusLastTarget);
+        if (focusDelta.lengthSq() > 0) camera.position.add(focusDelta);
+      }
+
+      focusLastTarget.copy(focusTarget);
+      if (ctrl) ctrl.update();
     } else if (mode === "cinematic") {
       driftT.current += dt;
       const ft = driftT.current;
@@ -1420,11 +1607,19 @@ export default function CopernixSpaceLab3D() {
   const [badgesOpen, setBadgesOpen] = useState(false);
   const [descentOpen, setDescentOpen] = useState(false);
   const [detectFlash, setDetectFlash] = useState(false);
+  const [focusedPlanetId, setFocusedPlanetId] = useState(null);
+  const [voiceMuted, setVoiceMuted] = useState(() => !!safeStorage.load()?.voiceMuted);
+  const [planetQuestDone, setPlanetQuestDone] = useState(() => !!safeStorage.load()?.planetQuestDone);
+  const [easyPilotEnabled, setEasyPilotEnabled] = useState(() => safeStorage.load()?.easyPilotEnabled ?? true);
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
   const moonPos = useRef(new THREE.Vector3(EARTH_ORBIT_R + MOON_ORBIT_R, 0, 0));
   const scanTargetPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
+  const planetPositions = useRef({
+    ...Object.fromEntries(SOLAR_PLANETS.map((planet) => [planet.id, new THREE.Vector3()])),
+    earth: earthPos.current,
+  });
   const reveal = useRef({ v: 0 });
   const controlsRef = useRef();
   const prevCamMode = useRef("free");
@@ -1465,8 +1660,16 @@ export default function CopernixSpaceLab3D() {
   }, []);
 
   useEffect(() => {
-    safeStorage.save({ completed, pilot, scanCount, missionIndex });
-  }, [completed, pilot, scanCount, missionIndex]);
+    safeStorage.save({ completed, pilot, scanCount, missionIndex, voiceMuted, planetQuestDone, easyPilotEnabled });
+  }, [completed, pilot, scanCount, missionIndex, voiceMuted, planetQuestDone, easyPilotEnabled]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   const showToast = useCallback((msg, ok = true) => {
     setToast({ msg, ok });
@@ -1474,14 +1677,68 @@ export default function CopernixSpaceLab3D() {
     showToast._t = window.setTimeout(() => setToast(null), 3500);
   }, []);
 
+  const speakPlanet = useCallback((id) => {
+    if (voiceMuted || !PLANET_FOCUS_IDS.has(id)) return;
+    if (typeof window === "undefined" || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+
+    const info = BODY_INFO[id];
+    const fact = PLANET_AUDIO_FACTS[id];
+    if (!info || !fact) return;
+
+    window.speechSynthesis.cancel();
+    const utterance = new window.SpeechSynthesisUtterance(fact);
+    utterance.lang = "pl-PL";
+    utterance.rate = 0.94;
+    utterance.pitch = 1.08;
+    window.speechSynthesis.speak(utterance);
+  }, [voiceMuted]);
+
+  const focusPlanet = useCallback((id) => {
+    if (!PLANET_FOCUS_IDS.has(id)) return;
+    setFocusedPlanetId(id);
+    setCameraMode("focus");
+  }, []);
+
+  const returnToSolarSystem = useCallback(() => {
+    setFocusedPlanetId(null);
+    setSelectedId(null);
+    setDetectFlash(false);
+    setCameraMode("system");
+  }, []);
+
+  const handlePilotMove = useCallback(() => {
+    setFocusedPlanetId(null);
+    setCameraMode((mode) => (mode === "intro" || mode === "launch" ? mode : "free"));
+  }, []);
+
+  const toggleEasyPilot = useCallback(() => {
+    setEasyPilotEnabled((enabled) => {
+      const next = !enabled;
+      showToast(next ? "🎮 Easy Pilot włączony." : "🎮 Easy Pilot wyłączony.");
+      return next;
+    });
+  }, [showToast]);
+
+  const toggleVoiceMuted = useCallback(() => {
+    setVoiceMuted((muted) => {
+      const next = !muted;
+      if (next && typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      return next;
+    });
+  }, []);
+
   /* start misji = odlot */
   const startMission = () => {
+    setFocusedPlanetId(null);
     setPhase("launch");
     setCameraMode("launch");
   };
   const onLaunchDone = useCallback(() => {
+    setFocusedPlanetId(null);
     setPhase("play");
-    setCameraMode("free");
+    setCameraMode("system");
     showToast(`🚀 Witaj na orbicie, ${pilot}! Centrum dowodzenia aktywne.`);
   }, [pilot, showToast]);
 
@@ -1530,6 +1787,7 @@ export default function CopernixSpaceLab3D() {
   const openDescent = useCallback(() => {
     setDescentOpen(true);
     setSelectedId(null);
+    setFocusedPlanetId(null);
     setDetectFlash(false);
     setCameraMode("earth");
   }, []);
@@ -1544,6 +1802,7 @@ export default function CopernixSpaceLab3D() {
 
   const handleDescentClose = useCallback(() => {
     setDescentOpen(false);
+    setFocusedPlanetId(null);
     setCameraMode("earth");
     showToast("🚀 Z powrotem na orbicie. Kosmos czeka!");
   }, [showToast]);
@@ -1556,6 +1815,15 @@ export default function CopernixSpaceLab3D() {
     if (missionIndex === 3 && id === "earth") {
       openDescent();
       return;
+    }
+
+    if (PLANET_FOCUS_IDS.has(id)) {
+      focusPlanet(id);
+      speakPlanet(id);
+      if (id === PLANET_QUEST_TARGET && !planetQuestDone) {
+        setPlanetQuestDone(true);
+        showToast("✔ Misja wykonana: Mars odnaleziony!");
+      }
     }
 
     /* logika misji sekwencyjnych */
@@ -1577,7 +1845,7 @@ export default function CopernixSpaceLab3D() {
         }
         return;
       }
-      if (id !== "sun" && id !== "earth" && id !== "moon" && id !== "satellite") {
+      if (!PLANET_FOCUS_IDS.has(id) && id !== "sun" && id !== "moon" && id !== "satellite") {
         showToast("🔍 To nie ten obiekt — szukaj pomarańczowego markera 📡!", false);
         return;
       }
@@ -1588,7 +1856,7 @@ export default function CopernixSpaceLab3D() {
       window.setTimeout(() => completeCurrentMission(), 3000);
       return;
     }
-  }, [phase, missionIndex, scanTargetId, scanCount, asteroids, completed, completeCurrentMission, pickScanTarget, showToast, openDescent]);
+  }, [phase, missionIndex, scanTargetId, scanCount, asteroids, completed, planetQuestDone, completeCurrentMission, pickScanTarget, showToast, openDescent, focusPlanet, speakPlanet]);
 
   const selectedInfo = useMemo(() => {
     if (!selectedId) return null;
@@ -1607,7 +1875,7 @@ export default function CopernixSpaceLab3D() {
   const allDone = completed.length >= MISSIONS.length;
 
   return (
-    <div style={S.app} translate="no">
+    <div style={S.app} translate="no" onContextMenu={(e) => e.preventDefault()}>
       <Canvas
         style={{ position: "absolute", inset: 0 }}
         camera={{ position: [EARTH_ORBIT_R + 1.45, 0.35, 0], fov: 60, near: 0.05, far: 600 }}
@@ -1625,11 +1893,24 @@ export default function CopernixSpaceLab3D() {
         <RevealDriver reveal={reveal} phase={phase} />
         <CameraDirector
           mode={cameraMode} earthPos={earthPos} moonPos={moonPos} scanTargetPos={scanTargetPos}
+          planetPositions={planetPositions} focusTargetId={focusedPlanetId}
           controlsRef={controlsRef} onLaunchDone={onLaunchDone} onDetectDone={onDetectDone}
+        />
+        <EasyPilotControls
+          enabled={phase === "play" && easyPilotEnabled}
+          controlsRef={controlsRef}
+          onPilotMove={handlePilotMove}
         />
 
         <Sun onSelect={handleSelect} selected={selectedId} />
-        <SolarPlanets clock={clock} onSelect={handleSelect} selected={selectedId} phase={phase} reveal={reveal} />
+        <SolarPlanets
+          clock={clock}
+          onSelect={handleSelect}
+          selected={selectedId}
+          phase={phase}
+          reveal={reveal}
+          planetPositions={planetPositions}
+        />
         <EarthSystem
           clock={clock} earthPos={earthPos} moonPos={moonPos}
           onSelect={handleSelect} selected={selectedId}
@@ -1655,8 +1936,11 @@ export default function CopernixSpaceLab3D() {
 
         <OrbitControls
           ref={controlsRef}
-          enabled={phase === "play" && cameraMode === "free"}
+          enabled={phase === "play" && (cameraMode === "free" || cameraMode === "focus" || cameraMode === "system")}
           enablePan={false}
+          enableRotate
+          enableZoom
+          mouseButtons={EASY_MOUSE_BUTTONS}
           minDistance={1.6}
           maxDistance={70}
           dampingFactor={0.08}
@@ -1694,10 +1978,15 @@ export default function CopernixSpaceLab3D() {
                 <span key={m.id} style={{ ...S.dot, ...(completed.includes(m.id) ? S.dotDone : i === missionIndex ? S.dotActive : {}) }} />
               ))}
             </span>
-            <span style={S.objectiveText}>
-              {allDone && missionIndex >= 4
-                ? `🛡 STRAŻNIK ${pilot.toUpperCase()} NA SŁUŻBIE · skany: ${scanCount}`
-                : currentMission.objective}
+            <span style={S.objectiveTextGroup}>
+              <span style={S.objectiveText}>
+                {planetQuestDone ? "✔ Misja wykonana: Mars odnaleziony!" : "🎯 Znajdź Marsa"}
+              </span>
+              <span style={S.objectiveSubText}>
+                {allDone && missionIndex >= 4
+                  ? `🛡 Strażnik ${pilot} na służbie · skany: ${scanCount}`
+                  : currentMission.objective}
+              </span>
             </span>
             <button style={S.badgeToggle} onClick={() => setBadgesOpen((o) => !o)} title="Odznaki">
               🏅
@@ -1720,8 +2009,36 @@ export default function CopernixSpaceLab3D() {
             </div>
           )}
 
+          <div style={S.controlsHint}>
+            Sterowanie: WASD ruch · mysz obrót · kółko zoom · klik planeta
+          </div>
+
           {/* DOCK — czas + kamera w jednym slim pasku */}
           <div style={S.dock}>
+            <button
+              onClick={returnToSolarSystem}
+              title="Powrót do szerokiego widoku Układu Słonecznego"
+              style={{ ...S.dockTextBtn, ...(cameraMode === "system" ? S.dockBtnActive : {}) }}
+            >
+              🏠 Układ Słoneczny
+            </button>
+            <button
+              onClick={toggleEasyPilot}
+              title="WASD rusza kamerą, mysz obraca, kółko przybliża"
+              style={{ ...S.dockTextBtn, ...(easyPilotEnabled ? S.dockBtnActive : {}) }}
+            >
+              🎮 Easy Pilot
+            </button>
+            <span style={S.dockDivider} />
+            <button
+              onClick={toggleVoiceMuted}
+              title={voiceMuted ? "Włącz głos planet" : "Wycisz głos planet"}
+              aria-label={voiceMuted ? "Włącz głos planet" : "Wycisz głos planet"}
+              style={{ ...S.dockBtn, ...(!voiceMuted ? S.dockBtnActive : {}) }}
+            >
+              {voiceMuted ? "🔇" : "🔊"}
+            </button>
+            <span style={S.dockDivider} />
             {[[0, "⏸"], [1, "1×"], [10, "10×"], [100, "100×"]].map(([v, label]) => (
               <button key={v} onClick={() => setTimeScale(v)} title={`Czas ${label}`}
                 style={{ ...S.dockBtn, ...(timeScale === v ? S.dockBtnActive : {}) }}>
@@ -1730,7 +2047,7 @@ export default function CopernixSpaceLab3D() {
             ))}
             <span style={S.dockDivider} />
             {[["earth", "🔭", "Skup na Ziemi"], ["cinematic", "🎬", "Odkrywca Kosmosu"], ["free", "🖐", "Wolna kamera"]].map(([m, icon, title]) => (
-              <button key={m} onClick={() => setCameraMode(m)} title={title}
+              <button key={m} onClick={() => { setFocusedPlanetId(null); setCameraMode(m); }} title={title}
                 style={{ ...S.dockBtn, ...(cameraMode === m ? S.dockBtnActive : {}) }}>
                 {icon}
               </button>
@@ -1822,7 +2139,9 @@ const S = {
   dot: { width: 8, height: 8, borderRadius: "50%", background: "#1E3A5F", display: "inline-block" },
   dotActive: { background: "#FFB02E", boxShadow: "0 0 8px rgba(255,176,46,0.8)" },
   dotDone: { background: "#5EE6A0" },
-  objectiveText: { fontSize: 13.5, fontWeight: 700, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  objectiveTextGroup: { minWidth: 0, display: "grid", gap: 1 },
+  objectiveText: { fontSize: 14, fontWeight: 900, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  objectiveSubText: { fontSize: 10.5, fontWeight: 700, lineHeight: 1.15, color: "#9FB6D4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   badgeToggle: {
     flexShrink: 0, background: "transparent", border: "none", fontSize: 17,
     cursor: "pointer", padding: "0 2px", filter: "drop-shadow(0 0 4px rgba(0,0,0,0.6))",
@@ -1842,7 +2161,8 @@ const S = {
   /* DOCK */
   dock: {
     position: "absolute", bottom: 26, left: "50%", transform: "translateX(-50%)",
-    display: "flex", alignItems: "center", gap: 6,
+    display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 6,
+    maxWidth: "calc(100vw - 24px)",
     background: "rgba(6,10,24,0.72)", backdropFilter: "blur(8px)",
     border: "1px solid rgba(30,58,95,0.9)", borderRadius: 999,
     padding: "6px 10px", zIndex: 10, boxShadow: "0 4px 24px rgba(0,0,0,0.45)",
@@ -1851,11 +2171,23 @@ const S = {
     fontSize: 14, fontWeight: 800, minWidth: 38, padding: "7px 9px", borderRadius: 999,
     border: "1px solid transparent", background: "transparent", color: "#9FB6D4", cursor: "pointer",
   },
+  dockTextBtn: {
+    fontSize: 13, fontWeight: 900, padding: "7px 12px", borderRadius: 999,
+    border: "1px solid transparent", background: "transparent", color: "#CFE2FF", cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
   dockBtnActive: {
     color: "#04121C", background: "#2FE6C8",
     boxShadow: "0 0 12px rgba(47,230,200,0.55)",
   },
   dockDivider: { width: 1, height: 20, background: "#1E3A5F", margin: "0 4px" },
+  controlsHint: {
+    position: "absolute", left: "50%", bottom: 126, transform: "translateX(-50%)",
+    zIndex: 10, padding: "5px 10px", borderRadius: 999,
+    background: "rgba(6,10,24,0.58)", border: "1px solid rgba(159,182,212,0.22)",
+    color: "#9FB6D4", fontSize: 11.5, fontWeight: 800, lineHeight: 1.2,
+    whiteSpace: "nowrap", maxWidth: "calc(100vw - 32px)", overflow: "hidden", textOverflow: "ellipsis",
+  },
 
   /* KARTA OBIEKTU */
   infoCard: {
