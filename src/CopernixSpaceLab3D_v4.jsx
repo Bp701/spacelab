@@ -113,6 +113,28 @@ function getPlanetFocusDistance(id) {
   return Math.max(2.0, planet.radius * 3.3 + (planet.rings ? 1.4 : 0.9));
 }
 
+function getPolishSpeechVoice(synthesis) {
+  const voices = synthesis.getVoices();
+  return voices.find((voice) => voice.lang === "pl-PL") || voices.find((voice) => voice.lang?.toLowerCase().startsWith("pl")) || null;
+}
+
+function speakPolish(text) {
+  if (typeof window === "undefined" || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+    console.warn("SpeechSynthesis unavailable");
+    return;
+  }
+
+  const synthesis = window.speechSynthesis;
+  synthesis.cancel();
+  const utterance = new window.SpeechSynthesisUtterance(text);
+  const polishVoice = getPolishSpeechVoice(synthesis);
+  if (polishVoice) utterance.voice = polishVoice;
+  utterance.lang = polishVoice?.lang || "pl-PL";
+  utterance.rate = 0.94;
+  utterance.pitch = 1.08;
+  synthesis.speak(utterance);
+}
+
 const TAIL_N = 14;          // segmenty ogona komety
 const SPARK_N = 12;         // iskry przy wejściu w atmosferę
 const FLYBY_TAIL = 22;      // segmenty ogona losowej komety
@@ -1679,18 +1701,11 @@ export default function CopernixSpaceLab3D() {
 
   const speakPlanet = useCallback((id) => {
     if (voiceMuted || !PLANET_FOCUS_IDS.has(id)) return;
-    if (typeof window === "undefined" || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
 
-    const info = BODY_INFO[id];
     const fact = PLANET_AUDIO_FACTS[id];
-    if (!info || !fact) return;
+    if (!fact) return;
 
-    window.speechSynthesis.cancel();
-    const utterance = new window.SpeechSynthesisUtterance(fact);
-    utterance.lang = "pl-PL";
-    utterance.rate = 0.94;
-    utterance.pitch = 1.08;
-    window.speechSynthesis.speak(utterance);
+    speakPolish(fact);
   }, [voiceMuted]);
 
   const focusPlanet = useCallback((id) => {
@@ -1727,6 +1742,10 @@ export default function CopernixSpaceLab3D() {
       }
       return next;
     });
+  }, []);
+
+  const testAudio = useCallback(() => {
+    speakPolish("Luna gotowa. Kliknij planetę, żeby usłyszeć ciekawostkę.");
   }, []);
 
   /* start misji = odlot */
@@ -2037,6 +2056,13 @@ export default function CopernixSpaceLab3D() {
               style={{ ...S.dockBtn, ...(!voiceMuted ? S.dockBtnActive : {}) }}
             >
               {voiceMuted ? "🔇" : "🔊"}
+            </button>
+            <button
+              onClick={testAudio}
+              title="Sprawdź głos Luny"
+              style={S.dockTextBtn}
+            >
+              🔊 Test audio
             </button>
             <span style={S.dockDivider} />
             {[[0, "⏸"], [1, "1×"], [10, "10×"], [100, "100×"]].map(([v, label]) => (

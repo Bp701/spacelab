@@ -1,53 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import { terraRecipe } from "./engine/terraRecipe";
 
-const landingPath = [
-  "Kosmos",
-  "Ziemia",
-  "Polska",
-  "Warmia i Mazury",
-  "Olsztyn",
-  "Wyspa Tumska",
-];
-
+const landingPath = terraRecipe.layers.map((layer) => layer.name);
 const landingSequence = ["Kosmos", "Ziemia", "Polska", "Warmia", "Olsztyn"];
-
-const missionTargets = [
-  {
-    id: "katedra",
-    icon: "🏰",
-    name: "Katedra św. Jakuba",
-    palette: ["#263B7A", "#8F6B3A", "#FFD089"],
-    visual: "cathedral",
-    route: "Katedra → przybliżenie → widok wnętrza → Luna",
-    narration:
-      "Witaj odkrywco. Przed tobą Katedra św. Jakuba, jeden z najmocniejszych punktów starego Olsztyna. Zatrzymaj się na chwilę i spójrz na jej wysoką bryłę jak na lokalną latarnię. Gotyckie mury nie są tylko tłem do zdjęcia. To zapis miasta, które rosło wokół rynku, zamku i warmińskich traktów. W jej cieniu przechodzili kupcy, mieszkańcy, muzycy i ludzie, którzy szukali orientacji w mieście tak samo jak ty po lądowaniu. Luna sugeruje: zacznij od wieży, potem przejdź wzrokiem do wejścia, a na końcu wyobraź sobie dźwięk organów odbijający się od cegieł. Ten punkt jest kotwicą misji.",
-  },
-  {
-    id: "lyna",
-    icon: "🌊",
-    name: "Rzeka Łyna",
-    palette: ["#123D5A", "#1FB8E0", "#9BE7FF"],
-    visual: "river",
-    route: "Łyna → nurt rzeki → spływ kajakiem → Luna",
-    narration:
-      "Witaj odkrywco. Łyna jest wodną osią Olsztyna. Nie musisz mieć mapy satelitarnej, żeby poczuć jej kierunek. Rzeka prowadzi przez miasto spokojniej niż ulice, ale pamięta więcej niż większość budynków. Płynie obok zielonych skarp, pod mostami i blisko miejsc, w których Olsztyn zmienia tempo z miejskiego na parkowe. Luna podpowiada: słuchaj jej jak ścieżki. Jeśli kosmos daje szeroki plan, Łyna daje lokalny rytm. Tu zaczyna się zejście z orbity do konkretu: szum wody, cień drzew, wilgotne powietrze i Warmia widziana z poziomu człowieka.",
-  },
-  {
-    id: "most",
-    icon: "🌉",
-    name: "Most / Park nad Łyną",
-    palette: ["#241B3D", "#D9A441", "#5EE6A0"],
-    visual: "bridge",
-    route: "Most → park nad Łyną → przejście piesze → Luna",
-    narration:
-      "Witaj odkrywco. Most i park nad Łyną są punktem przejścia: z jednego brzegu miasta na drugi, ale też z perspektywy kosmicznej do lokalnego świata. W AndromedaBridge most nie jest dekoracją. Jest decyzją. Stajesz na nim po lądowaniu i widzisz, że trasa nie kończy się na Olsztynie jako nazwie. Prowadzi dalej: do ścieżek, zieleni, rzeki, katedry, ludzi i pamięci miejsca. Luna mówi: przejdź powoli. Po jednej stronie zostawiasz orbitę, po drugiej zaczynasz Wirtualną Warmię. To tu moduł staje się mostem, a nie tylko kolejnym ekranem.",
-  },
-];
+const missionTargets = terraRecipe.pointsOfInterest;
+const OLSZTYN_WEATHER_URL = terraRecipe.weather.url;
 
 export default function AndromedaBridge({ onClose }) {
   const [landingActive, setLandingActive] = useState(false);
   const [activeStep, setActiveStep] = useState(-1);
   const [selectedMission, setSelectedMission] = useState(null);
+  const [weatherLabel, setWeatherLabel] = useState(terraRecipe.weather.fallback);
   const mountedRef = useRef(false);
   const landingTimerRef = useRef(null);
 
@@ -81,6 +44,34 @@ export default function AndromedaBridge({ onClose }) {
 
     return clearLandingTimer;
   }, [activeStep, landingActive]);
+
+  useEffect(() => {
+    let alive = true;
+    const controller = new AbortController();
+
+    fetch(OLSZTYN_WEATHER_URL, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Open-Meteo HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        if (!alive) return;
+        const current = data.current_weather;
+        if (!current || typeof current.temperature !== "number" || typeof current.windspeed !== "number") {
+          throw new Error("Open-Meteo missing current_weather");
+        }
+        setWeatherLabel(`Olsztyn teraz: ${Math.round(current.temperature)}°C | wiatr ${Math.round(current.windspeed)} km/h`);
+      })
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        if (alive) setWeatherLabel(terraRecipe.weather.fallback);
+      });
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, []);
 
   const startLanding = () => {
     clearLandingTimer();
@@ -119,9 +110,7 @@ export default function AndromedaBridge({ onClose }) {
           ))}
         </div>
 
-        <p style={styles.message}>
-          Moduł lądowania: Kosmos → Ziemia → Warmia i Mazury → Olsztyn
-        </p>
+        <p style={styles.message}>{terraRecipe.narration.intro}</p>
 
         <div style={styles.sequencePanel} aria-label="Animowana sekwencja lądowania">
           <div style={styles.sequenceHeader}>
@@ -162,7 +151,10 @@ export default function AndromedaBridge({ onClose }) {
                 <p style={styles.hubVersion}>Copernix Terra v1</p>
                 <h2 style={styles.hubTitle}>Olsztyn Mission Hub</h2>
               </div>
-              <span style={styles.hubBadge}>Luna online</span>
+              <div style={styles.hubBadges}>
+                <span style={styles.hubBadge}>Luna online</span>
+                <span style={styles.weatherBadge}>{weatherLabel}</span>
+              </div>
             </div>
 
             <div style={styles.targets} aria-label="Punkty docelowe Olsztyna">
@@ -174,7 +166,7 @@ export default function AndromedaBridge({ onClose }) {
                     ...(selectedMission?.id === target.id ? styles.targetCardActive : {}),
                   }}
                 >
-                  <PhotoPlaceholder palette={target.palette} label={target.name} visual={target.visual} />
+                  <TerraPhoto target={target} />
                   <h3 style={styles.targetTitle}>{target.icon} {target.name}</h3>
                   <p style={styles.route}>{target.route}</p>
                   <p style={styles.luna}>Luna gotowa do narracji terenowej.</p>
@@ -244,6 +236,28 @@ function PhotoPlaceholder({ palette, label, visual }) {
         zdjęcie placeholder
       </text>
     </svg>
+  );
+}
+
+function TerraPhoto({ target }) {
+  const [imageError, setImageError] = useState(false);
+
+  if (imageError) {
+    return <PhotoPlaceholder palette={target.palette} label={target.name} visual={target.visual} />;
+  }
+
+  return (
+    <figure style={styles.photoFrame}>
+      <img
+        src={target.image}
+        alt={target.name}
+        style={styles.photoImage}
+        loading="lazy"
+        decoding="async"
+        onError={() => setImageError(true)}
+      />
+      <figcaption style={styles.photoCaption}>lokalne zdjęcie · {target.name}</figcaption>
+    </figure>
   );
 }
 
@@ -436,12 +450,29 @@ const styles = {
     fontWeight: 900,
     letterSpacing: 0,
   },
+  hubBadges: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: 8,
+  },
   hubBadge: {
     border: "1px solid rgba(94, 230, 160, 0.42)",
     borderRadius: 999,
     padding: "7px 10px",
     background: "rgba(94, 230, 160, 0.1)",
     color: "#CFEDE6",
+    fontFamily: "ui-monospace, Consolas, monospace",
+    fontSize: 12,
+    fontWeight: 800,
+  },
+  weatherBadge: {
+    border: "1px solid rgba(95, 198, 255, 0.34)",
+    borderRadius: 999,
+    padding: "7px 10px",
+    background: "rgba(31, 184, 224, 0.1)",
+    color: "#D8F4FF",
     fontFamily: "ui-monospace, Consolas, monospace",
     fontSize: 12,
     fontWeight: 800,
@@ -475,6 +506,38 @@ const styles = {
     aspectRatio: "320 / 150",
     marginBottom: 12,
     borderRadius: 14,
+  },
+  photoFrame: {
+    position: "relative",
+    margin: "0 0 12px",
+    width: "100%",
+    aspectRatio: "320 / 150",
+    overflow: "hidden",
+    borderRadius: 14,
+    background: "rgba(12, 20, 48, 0.72)",
+    border: "1px solid rgba(159, 182, 212, 0.18)",
+  },
+  photoImage: {
+    display: "block",
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+  },
+  photoCaption: {
+    position: "absolute",
+    left: 10,
+    bottom: 9,
+    maxWidth: "calc(100% - 20px)",
+    padding: "5px 8px",
+    borderRadius: 999,
+    background: "rgba(6, 10, 24, 0.72)",
+    color: "#E6EEF8",
+    fontSize: 11,
+    fontWeight: 800,
+    lineHeight: 1.1,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   },
   targetTitle: {
     margin: 0,
