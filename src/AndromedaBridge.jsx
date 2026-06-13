@@ -6,6 +6,37 @@ const landingSequence = ["Kosmos", "Ziemia", "Polska", "Warmia", "Olsztyn"];
 const missionTargets = terraRecipe.pointsOfInterest;
 const OLSZTYN_WEATHER_URL = terraRecipe.weather.url;
 
+function getPolishSpeechVoice(synthesis) {
+  const voices = synthesis.getVoices();
+  return voices.find((voice) => voice.lang === "pl-PL") || voices.find((voice) => voice.lang?.toLowerCase().startsWith("pl")) || null;
+}
+
+function speakLuna(text) {
+  if (typeof window === "undefined" || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+    console.warn("SpeechSynthesis unavailable");
+    return;
+  }
+
+  const synthesis = window.speechSynthesis;
+  synthesis.cancel();
+  const utterance = new window.SpeechSynthesisUtterance(text);
+  const polishVoice = getPolishSpeechVoice(synthesis);
+  if (polishVoice) utterance.voice = polishVoice;
+  utterance.lang = polishVoice?.lang || "pl-PL";
+  utterance.rate = 0.94;
+  utterance.pitch = 1.04;
+  synthesis.speak(utterance);
+}
+
+function stopLuna() {
+  if (typeof window === "undefined" || !window.speechSynthesis) {
+    console.warn("SpeechSynthesis unavailable");
+    return;
+  }
+
+  window.speechSynthesis.cancel();
+}
+
 export default function AndromedaBridge({ onClose }) {
   const [landingActive, setLandingActive] = useState(false);
   const [activeStep, setActiveStep] = useState(-1);
@@ -13,6 +44,7 @@ export default function AndromedaBridge({ onClose }) {
   const [weatherLabel, setWeatherLabel] = useState(terraRecipe.weather.fallback);
   const mountedRef = useRef(false);
   const landingTimerRef = useRef(null);
+  const narrationPanelRef = useRef(null);
 
   const clearLandingTimer = () => {
     if (landingTimerRef.current !== null) {
@@ -27,6 +59,7 @@ export default function AndromedaBridge({ onClose }) {
     return () => {
       mountedRef.current = false;
       clearLandingTimer();
+      stopLuna();
     };
   }, []);
 
@@ -78,23 +111,35 @@ export default function AndromedaBridge({ onClose }) {
     setActiveStep(-1);
     setLandingActive(true);
     setSelectedMission(null);
+    stopLuna();
   };
 
   const closeBridge = () => {
     clearLandingTimer();
     mountedRef.current = false;
+    stopLuna();
     onClose();
+  };
+
+  const selectMission = (target) => {
+    setSelectedMission(target);
+    speakLuna(target.narration);
+    window.requestAnimationFrame(() => {
+      narrationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      narrationPanelRef.current?.focus({ preventScroll: true });
+    });
   };
 
   const landingComplete = activeStep === landingSequence.length - 1;
 
   return (
-    <section style={styles.overlay} aria-label="AndromedaBridge Terra Mode">
-      <div style={styles.panel}>
+    <section className="terra-overlay" style={styles.overlay} aria-label="AndromedaBridge Terra Mode">
+      <style>{terraResponsiveCss}</style>
+      <div className="terra-panel" style={styles.panel}>
         <div style={styles.header}>
           <div>
             <p style={styles.phase}>Faza 0: prototyp lokalizacyjny w przygotowaniu</p>
-            <h1 style={styles.title}>AndromedaBridge: Terra Mode</h1>
+            <h1 className="terra-title" style={styles.title}>AndromedaBridge: Terra Mode</h1>
           </div>
           <button type="button" onClick={closeBridge} style={styles.closeButton} aria-label="Wróć do kosmosu">
             ✕
@@ -157,10 +202,11 @@ export default function AndromedaBridge({ onClose }) {
               </div>
             </div>
 
-            <div style={styles.targets} aria-label="Punkty docelowe Olsztyna">
+            <div className="terra-targets" style={styles.targets} aria-label="Punkty docelowe Olsztyna">
               {missionTargets.map((target) => (
                 <article
                   key={target.id}
+                  className="terra-card"
                   style={{
                     ...styles.targetCard,
                     ...(selectedMission?.id === target.id ? styles.targetCardActive : {}),
@@ -170,7 +216,7 @@ export default function AndromedaBridge({ onClose }) {
                   <h3 style={styles.targetTitle}>{target.icon} {target.name}</h3>
                   <p style={styles.route}>{target.route}</p>
                   <p style={styles.luna}>Luna gotowa do narracji terenowej.</p>
-                  <button type="button" onClick={() => setSelectedMission(target)} style={styles.discoverButton}>
+                  <button type="button" onClick={() => selectMission(target)} style={styles.discoverButton}>
                     Odkryj
                   </button>
                 </article>
@@ -178,9 +224,17 @@ export default function AndromedaBridge({ onClose }) {
             </div>
 
             {selectedMission && (
-              <article style={styles.narrationPanel}>
+              <article ref={narrationPanelRef} tabIndex={-1} style={styles.narrationPanel}>
                 <p style={styles.narrationLabel}>Narracja Luny · 30-60 sekund</p>
                 <h3 style={styles.narrationTitle}>{selectedMission.icon} {selectedMission.name}</h3>
+                <div style={styles.narrationActions}>
+                  <button type="button" onClick={() => speakLuna(selectedMission.narration)} style={styles.readButton}>
+                    🔊 Czytaj
+                  </button>
+                  <button type="button" onClick={stopLuna} style={styles.stopButton}>
+                    ⏹ Stop
+                  </button>
+                </div>
                 <p style={styles.narrationText}>Luna: “{selectedMission.narration}”</p>
               </article>
             )}
@@ -261,31 +315,91 @@ function TerraPhoto({ target }) {
   );
 }
 
+const terraResponsiveCss = `
+  .terra-overlay {
+    isolation: isolate;
+    overflow-x: hidden;
+  }
+
+  .terra-panel:focus,
+  .terra-panel *:focus {
+    outline: 2px solid rgba(47, 230, 200, 0.72);
+    outline-offset: 3px;
+  }
+
+  @media (max-width: 640px) {
+    .terra-overlay {
+      align-items: stretch !important;
+      justify-content: flex-start !important;
+      width: 100vw !important;
+      max-width: 100vw !important;
+      min-height: 100dvh !important;
+      padding: 8px !important;
+      overflow-x: hidden !important;
+      background: rgba(1, 4, 12, 0.97) !important;
+    }
+
+    .terra-panel {
+      width: 100% !important;
+      max-width: calc(100vw - 16px) !important;
+      max-height: calc(100dvh - 16px) !important;
+      padding: 16px !important;
+      border-radius: 14px !important;
+      overflow-x: hidden !important;
+      background: rgba(3, 7, 18, 0.96) !important;
+      box-shadow: 0 0 0 1px rgba(47, 230, 200, 0.18), 0 18px 42px rgba(0, 0, 0, 0.72) !important;
+    }
+
+    .terra-title {
+      font-size: 27px !important;
+      line-height: 1.08 !important;
+      overflow-wrap: anywhere !important;
+    }
+
+    .terra-targets {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) !important;
+      gap: 12px !important;
+      width: 100% !important;
+    }
+
+    .terra-card {
+      flex: 1 1 100% !important;
+      min-width: 0 !important;
+      width: 100% !important;
+    }
+  }
+`;
+
 const styles = {
   overlay: {
     position: "fixed",
     inset: 0,
-    zIndex: 35,
+    zIndex: 1200,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    width: "100vw",
+    maxWidth: "100vw",
     padding: 24,
     boxSizing: "border-box",
     background:
-      "radial-gradient(circle at 50% 35%, rgba(31, 184, 224, 0.2), rgba(3, 5, 12, 0.92) 58%, rgba(3, 5, 12, 0.98))",
+      "radial-gradient(circle at 50% 35%, rgba(31, 184, 224, 0.16), rgba(1, 4, 12, 0.96) 56%, rgba(1, 4, 12, 0.99))",
     color: "#E6EEF8",
     fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+    overflowX: "hidden",
   },
   panel: {
-    width: "min(920px, 100%)",
+    width: "min(920px, calc(100vw - 48px))",
     maxHeight: "calc(100vh - 48px)",
     overflowY: "auto",
+    overflowX: "hidden",
     border: "1px solid rgba(47, 230, 200, 0.36)",
     borderRadius: 18,
     padding: "24px",
     boxSizing: "border-box",
-    background: "rgba(6, 10, 24, 0.86)",
-    boxShadow: "0 0 42px rgba(47, 230, 200, 0.16), 0 18px 52px rgba(0, 0, 0, 0.55)",
+    background: "rgba(4, 8, 20, 0.94)",
+    boxShadow: "0 0 0 1px rgba(47, 230, 200, 0.08), 0 0 42px rgba(47, 230, 200, 0.16), 0 18px 58px rgba(0, 0, 0, 0.72)",
     backdropFilter: "blur(14px)",
   },
   header: {
@@ -404,13 +518,13 @@ const styles = {
   },
   sequenceStepActive: {
     transform: "translateY(-3px)",
-    borderColor: "rgba(255, 176, 46, 0.78)",
+    border: "1px solid rgba(255, 176, 46, 0.78)",
     background: "rgba(255, 176, 46, 0.18)",
     color: "#FFE2A6",
     boxShadow: "0 0 18px rgba(255, 176, 46, 0.32)",
   },
   sequenceStepDone: {
-    borderColor: "rgba(94, 230, 160, 0.52)",
+    border: "1px solid rgba(94, 230, 160, 0.52)",
     background: "rgba(94, 230, 160, 0.12)",
     color: "#CFEDE6",
   },
@@ -497,8 +611,8 @@ const styles = {
   },
   targetCardActive: {
     transform: "translateY(-3px)",
-    borderColor: "rgba(255, 176, 46, 0.72)",
-    boxShadow: "0 0 22px rgba(255, 176, 46, 0.2)",
+    border: "1px solid rgba(255, 176, 46, 0.72)",
+    boxShadow: "0 0 0 1px rgba(255, 176, 46, 0.14), 0 0 22px rgba(255, 176, 46, 0.2)",
   },
   photo: {
     display: "block",
@@ -579,6 +693,34 @@ const styles = {
     borderRadius: 14,
     border: "1px solid rgba(94, 230, 160, 0.36)",
     background: "rgba(94, 230, 160, 0.08)",
+  },
+  narrationActions: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  readButton: {
+    border: "none",
+    borderRadius: 999,
+    padding: "10px 14px",
+    background: "linear-gradient(135deg, #2FE6C8, #1FB8E0)",
+    color: "#04121C",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
+  stopButton: {
+    border: "1px solid rgba(159, 182, 212, 0.3)",
+    borderRadius: 999,
+    padding: "9px 13px",
+    background: "rgba(12, 20, 48, 0.78)",
+    color: "#E6EEF8",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    lineHeight: 1,
   },
   narrationLabel: {
     margin: "0 0 6px",

@@ -1830,12 +1830,7 @@ export default function CopernixSpaceLab3D() {
     if (phase !== "play") return;
     setSelectedId(id);
 
-    /* misja 4: kliknięcie Ziemi = lądowanie w Olsztynie */
-    if (missionIndex === 3 && id === "earth") {
-      openDescent();
-      return;
-    }
-
+    /* misja 4: kliknięcie Ziemi najpierw skupia kamerę; lądowanie startuje z CTA */
     if (PLANET_FOCUS_IDS.has(id)) {
       focusPlanet(id);
       speakPlanet(id);
@@ -2090,7 +2085,7 @@ export default function CopernixSpaceLab3D() {
               <div style={S.infoRow}>⚡ {selectedInfo.speed}</div>
               <div style={S.infoFact}>💡 {selectedInfo.fact}</div>
               {selectedId === "earth" && (
-                <button style={S.landBtn} onClick={openDescent}>🛬 LĄDOWANIE W OLSZTYNIE</button>
+                <button style={S.landBtn} onClick={openDescent}>🌍 LĄDUJ NA ZIEMI</button>
               )}
             </div>
           )}
