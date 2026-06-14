@@ -25,6 +25,7 @@ import * as THREE from "three";
 
 /* ---------------- Bezpieczny zapis ---------------- */
 const STORAGE_KEY = "copernix_space_lab_3d_v4";
+const PLANET_DISCOVERY_STORAGE_KEY = "spacelab_discovered_planets";
 const safeStorage = {
   load() {
     try {
@@ -36,6 +37,24 @@ const safeStorage = {
     try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* bez zapisu */ }
   },
 };
+
+function loadStringArray(key) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStringArray(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* bez zapisu */
+  }
+}
 
 /* ---------------- Stałe sceny ---------------- */
 const LUNAR_KM = 384400;
@@ -86,6 +105,9 @@ const SOLAR_PLANETS = [
 
 const SOLAR_PLANET_BY_ID = Object.fromEntries(SOLAR_PLANETS.map((planet) => [planet.id, planet]));
 const PLANET_FOCUS_IDS = new Set([...SOLAR_PLANETS.map((planet) => planet.id), "earth"]);
+const PLANET_DISCOVERY_IDS = ["mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"];
+const PLANET_DISCOVERY_ID_SET = new Set(PLANET_DISCOVERY_IDS);
+const PLANET_DISCOVERY_TOTAL = PLANET_DISCOVERY_IDS.length;
 const PLANET_QUEST_TARGET = "mars";
 const PLANET_AUDIO_FACTS = {
   mercury: "Cześć! Jestem Merkury. Okrążam Słońce w 88 dni.",
@@ -1636,6 +1658,9 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const [voiceMuted, setVoiceMuted] = useState(() => !!safeStorage.load()?.voiceMuted);
   const [planetQuestDone, setPlanetQuestDone] = useState(() => !!safeStorage.load()?.planetQuestDone);
   const [easyPilotEnabled, setEasyPilotEnabled] = useState(() => safeStorage.load()?.easyPilotEnabled ?? true);
+  const [discoveredPlanets, setDiscoveredPlanets] = useState(() =>
+    loadStringArray(PLANET_DISCOVERY_STORAGE_KEY).filter((id) => PLANET_DISCOVERY_ID_SET.has(id))
+  );
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -1654,6 +1679,9 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
 
   const guardianActive = phase === "play" && missionIndex >= 4;
   const currentMission = MISSIONS[missionIndex];
+  const discoveredPlanetSet = useMemo(() => new Set(discoveredPlanets), [discoveredPlanets]);
+  const discoveredPlanetCount = discoveredPlanetSet.size;
+  const allPlanetsDiscovered = discoveredPlanetCount >= PLANET_DISCOVERY_TOTAL;
 
   /* globalny fullscreen + animacje CSS */
   useEffect(() => {
@@ -1751,6 +1779,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   useEffect(() => {
     safeStorage.save({ completed, pilot, scanCount, missionIndex, voiceMuted, planetQuestDone, easyPilotEnabled });
   }, [completed, pilot, scanCount, missionIndex, voiceMuted, planetQuestDone, easyPilotEnabled]);
+
+  useEffect(() => {
+    saveStringArray(PLANET_DISCOVERY_STORAGE_KEY, discoveredPlanets);
+  }, [discoveredPlanets]);
 
   useEffect(() => {
     return () => {
@@ -1893,9 +1925,15 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     showToast("🚀 Z powrotem na orbicie. Kosmos czeka!");
   }, [showToast]);
 
+  const markPlanetDiscovered = useCallback((id) => {
+    if (!PLANET_DISCOVERY_ID_SET.has(id)) return;
+    setDiscoveredPlanets((ids) => (ids.includes(id) ? ids : [...ids, id]));
+  }, []);
+
   const handleSelect = useCallback((id) => {
     if (phase !== "play") return;
     setSelectedId(id);
+    markPlanetDiscovered(id);
 
     /* misja 4: kliknięcie Ziemi najpierw skupia kamerę; lądowanie startuje z CTA */
     if (PLANET_FOCUS_IDS.has(id)) {
@@ -1937,7 +1975,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       window.setTimeout(() => completeCurrentMission(), 3000);
       return;
     }
-  }, [phase, missionIndex, scanTargetId, scanCount, asteroids, completed, planetQuestDone, completeCurrentMission, pickScanTarget, showToast, openDescent, focusPlanet, speakPlanet]);
+  }, [phase, missionIndex, scanTargetId, scanCount, asteroids, completed, planetQuestDone, completeCurrentMission, pickScanTarget, showToast, openDescent, focusPlanet, speakPlanet, markPlanetDiscovered]);
 
   const selectedInfo = useMemo(() => {
     if (!selectedId) return null;
@@ -1952,6 +1990,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       fact: `Około ${fmt.format(a.diameterM)} m średnicy — starsza niż dinozaury!`,
     };
   }, [selectedId, asteroids]);
+  const selectedPlanetDiscovered = selectedId ? discoveredPlanetSet.has(selectedId) : false;
 
   const allDone = completed.length >= MISSIONS.length;
   const majorOverlayOpen = hideSceneLabels || !!selectedInfo || descentOpen || badgesOpen || detectFlash;
@@ -2074,6 +2113,13 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                   : currentMission.objective}
               </span>
             </span>
+            <span
+              className="cx-planet-progress"
+              style={{ ...S.planetProgress, ...(allPlanetsDiscovered ? S.planetProgressDone : {}) }}
+              title={allPlanetsDiscovered ? "Pilot Układu Słonecznego" : `Planety: ${discoveredPlanetCount}/${PLANET_DISCOVERY_TOTAL}`}
+            >
+              {allPlanetsDiscovered ? "🪐 Pilot Układu" : `Planety: ${discoveredPlanetCount}/${PLANET_DISCOVERY_TOTAL}`}
+            </span>
             <button className="cx-badge-toggle" style={S.badgeToggle} onClick={() => setBadgesOpen((o) => !o)} title="Odznaki">
               🏅
             </button>
@@ -2091,6 +2137,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                   </div>
                 );
               })}
+              <div style={{ ...S.panelBadge, ...(allPlanetsDiscovered ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{allPlanetsDiscovered ? "🪐" : "🔒"}</span>
+                <span>
+                  {allPlanetsDiscovered
+                    ? "Pilot Układu Słonecznego"
+                    : `Pilot Układu — ${discoveredPlanetCount}/${PLANET_DISCOVERY_TOTAL} planet`}
+                </span>
+              </div>
               <input style={S.pilotInput} value={pilot} maxLength={14} onChange={(e) => setPilot(e.target.value)} aria-label="Imię pilota" />
             </div>
           )}
@@ -2159,6 +2213,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
               <button style={S.infoClose} onClick={() => setSelectedId(null)}>✕</button>
               <div style={S.infoName}>{selectedInfo.name}</div>
               <div style={S.infoType}>{selectedInfo.type}</div>
+              {selectedPlanetDiscovered && <div style={S.infoDiscovered}>✅ Odkryta</div>}
               <div style={S.infoRow}>📏 {selectedInfo.distance}</div>
               <div style={S.infoRow}>⚡ {selectedInfo.speed}</div>
               <div style={S.infoFact}>💡 {selectedInfo.fact}</div>
@@ -2244,6 +2299,29 @@ const S = {
   badgeToggle: {
     flexShrink: 0, background: "transparent", border: "none", fontSize: 17,
     cursor: "pointer", padding: "0 2px", filter: "drop-shadow(0 0 4px rgba(0,0,0,0.6))",
+  },
+  planetProgress: {
+    flexShrink: 0, whiteSpace: "nowrap", fontSize: 11.5, fontWeight: 900,
+    padding: "4px 9px", borderRadius: 999, color: "#CFE2FF",
+    background: "rgba(47,230,200,0.10)", border: "1px solid rgba(47,230,200,0.3)",
+  },
+  planetProgressDone: {
+    color: "#04121C", background: "linear-gradient(135deg, #FFD36E, #FFB02E)",
+    border: "1px solid rgba(255,176,46,0.65)", boxShadow: "0 0 12px rgba(255,176,46,0.5)",
+  },
+  panelBadge: {
+    display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 900,
+    padding: "7px 9px", borderRadius: 10, marginTop: 1,
+    background: "rgba(47,230,200,0.08)", border: "1px solid rgba(47,230,200,0.28)", color: "#CFEDE6",
+  },
+  panelBadgeDone: {
+    color: "#241303", background: "linear-gradient(135deg, #FFD36E, #FFB02E)",
+    border: "1px solid rgba(255,176,46,0.65)", boxShadow: "0 0 12px rgba(255,176,46,0.45)",
+  },
+  infoDiscovered: {
+    display: "inline-block", marginBottom: 7, fontSize: 11.5, fontWeight: 900,
+    padding: "3px 8px", borderRadius: 999, color: "#04121C",
+    background: "linear-gradient(135deg, #5EE6A0, #2FE6C8)",
   },
   badgePanel: {
     position: "absolute", top: 52, left: "50%", transform: "translateX(-50%)",
