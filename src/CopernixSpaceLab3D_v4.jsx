@@ -120,6 +120,12 @@ const PLANET_AUDIO_FACTS = {
   neptune: "Cześć! Jestem Neptun. Wieją u mnie bardzo szybkie wiatry.",
 };
 
+/* ---------------- Anomalia Copernix (procedural mission) ---------------- */
+const ANOMALY_ID = "anomaly";
+const ANOMALY_STORAGE_KEY = "spacelab_anomaly_discovered";
+/* poza orbitą Jowisza (22.5), przed Saturnem (30), uniesiona nad ekliptyką — dobrze widoczna w Easy Pilot */
+const ANOMALY_POS = new THREE.Vector3(-16.6, 3.1, 22.4);
+
 function getPlanetOrbitPosition(planet, t, out) {
   const a = planet.phase + t * planet.speed;
   const x = Math.cos(a) * planet.orbit;
@@ -130,6 +136,7 @@ function getPlanetOrbitPosition(planet, t, out) {
 
 function getPlanetFocusDistance(id) {
   if (id === "earth") return 3.4;
+  if (id === ANOMALY_ID) return 4.6;
   const planet = SOLAR_PLANET_BY_ID[id];
   if (!planet) return 3.2;
   return Math.max(2.0, planet.radius * 3.3 + (planet.rings ? 1.4 : 0.9));
@@ -524,6 +531,88 @@ function Sun({ onSelect, selected, showLabels }) {
       </sprite>
       {showLabels && (
         <Html position={[0, SUN_R + 1.6, 0]} center distanceFactor={40} style={labelStyle(selected === "sun")}>☀️ Słońce</Html>
+      )}
+    </group>
+  );
+}
+
+/** Procedural „Anomalia Copernix" — lekki obiekt energetyczny (rdzeń + pierścienie + punkty + poświata). */
+function SpaceAnomaly({ onSelect, selected, discovered, showLabels, reveal }) {
+  const ring1 = useRef();
+  const ring2 = useRef();
+  const core = useRef();
+  const glow = useRef();
+  const pts = useRef();
+  const glowTex = useMemo(() => makeRadialGlow("rgba(190,150,255,0.7)", "rgba(120,80,220,0)", 128), []);
+  const accent = discovered ? "#5EE6A0" : "#B98CFF";
+
+  /* deterministyczna chmurka ~60 punktów na powłoce kuli — „pole energii" */
+  const pointsGeom = useMemo(() => {
+    const N = 60;
+    const arr = new Float32Array(N * 3);
+    let s = 7;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    for (let i = 0; i < N; i++) {
+      const u = rnd() * 2 - 1;
+      const th = rnd() * Math.PI * 2;
+      const r = 1.0 + rnd() * 0.9;
+      const sq = Math.sqrt(1 - u * u);
+      arr[i * 3] = Math.cos(th) * sq * r;
+      arr[i * 3 + 1] = u * r;
+      arr[i * 3 + 2] = Math.sin(th) * sq * r;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+    return g;
+  }, []);
+
+  useFrame((state, dt) => {
+    const t = state.clock.elapsedTime;
+    const rv = reveal ? reveal.current.v : 1;
+    if (ring1.current) ring1.current.rotation.z += dt * 0.35;
+    if (ring2.current) { ring2.current.rotation.x += dt * 0.28; ring2.current.rotation.y -= dt * 0.2; }
+    if (pts.current) pts.current.rotation.y += dt * 0.12;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 1.6);
+    if (glow.current) {
+      const gs = (selected ? 5.4 : 4.2) + 0.4 * pulse;
+      glow.current.scale.set(gs, gs, 1);
+      glow.current.material.opacity = (selected ? 0.5 : 0.32) * rv * (0.7 + 0.3 * pulse);
+    }
+    if (core.current) core.current.material.emissiveIntensity = (selected ? 1.3 : 0.85) + 0.4 * pulse;
+  });
+
+  return (
+    <group position={ANOMALY_POS}>
+      {/* hojny, niewidzialny cel kliknięcia — łatwy do trafienia dla dziecka */}
+      <mesh onClick={(e) => { e.stopPropagation(); onSelect(ANOMALY_ID); }}>
+        <sphereGeometry args={[1.5, 12, 12]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
+      <sprite ref={glow} scale={[4.2, 4.2, 1]} raycast={() => null}>
+        <spriteMaterial map={glowTex} transparent opacity={0.32} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+
+      <mesh ref={core} raycast={() => null}>
+        <sphereGeometry args={[0.55, 24, 24]} />
+        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={1} roughness={0.3} transparent opacity={0.92} toneMapped={false} />
+      </mesh>
+
+      <mesh ref={ring1} rotation={[Math.PI / 2, 0, 0]} raycast={() => null}>
+        <torusGeometry args={[1.15, 0.045, 10, 80]} />
+        <meshBasicMaterial color={accent} transparent opacity={0.7} toneMapped={false} />
+      </mesh>
+      <mesh ref={ring2} rotation={[0.6, 0.4, 0]} raycast={() => null}>
+        <torusGeometry args={[1.45, 0.03, 10, 80]} />
+        <meshBasicMaterial color={accent} transparent opacity={0.5} toneMapped={false} />
+      </mesh>
+
+      <points ref={pts} geometry={pointsGeom} raycast={() => null}>
+        <pointsMaterial size={0.06} color={accent} transparent opacity={0.8} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
+      </points>
+
+      {showLabels && (
+        <Html position={[0, 1.9, 0]} center distanceFactor={42} style={labelStyle(selected)}>✨ Anomalia Copernix</Html>
       )}
     </group>
   );
@@ -1727,6 +1816,11 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const [discoveredPlanets, setDiscoveredPlanets] = useState(() =>
     loadStringArray(PLANET_DISCOVERY_STORAGE_KEY).filter((id) => PLANET_DISCOVERY_ID_SET.has(id))
   );
+  const [anomalyDiscovered, setAnomalyDiscovered] = useState(() => {
+    try { return window.localStorage.getItem(ANOMALY_STORAGE_KEY) === "true"; } catch { return false; }
+  });
+  const [anomalyScanState, setAnomalyScanState] = useState("idle"); // idle | scanning | done
+  const anomalyTimer = useRef(null);
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -1735,6 +1829,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const planetPositions = useRef({
     ...Object.fromEntries(SOLAR_PLANETS.map((planet) => [planet.id, new THREE.Vector3()])),
     earth: earthPos.current,
+    [ANOMALY_ID]: ANOMALY_POS,
   });
   const reveal = useRef({ v: 0 });
   const controlsRef = useRef();
@@ -1851,6 +1946,12 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   }, [discoveredPlanets]);
 
   useEffect(() => {
+    try { window.localStorage.setItem(ANOMALY_STORAGE_KEY, anomalyDiscovered ? "true" : "false"); } catch { /* bez zapisu */ }
+  }, [anomalyDiscovered]);
+
+  useEffect(() => () => { if (anomalyTimer.current) window.clearTimeout(anomalyTimer.current); }, []);
+
+  useEffect(() => {
     return () => {
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
@@ -1874,7 +1975,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   }, [voiceMuted]);
 
   const focusPlanet = useCallback((id) => {
-    if (!PLANET_FOCUS_IDS.has(id)) return;
+    if (!PLANET_FOCUS_IDS.has(id) && id !== ANOMALY_ID) return;
     setFocusedPlanetId(id);
     setCameraMode("focus");
   }, []);
@@ -1996,10 +2097,27 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setDiscoveredPlanets((ids) => (ids.includes(id) ? ids : [...ids, id]));
   }, []);
 
+  const scanAnomaly = useCallback(() => {
+    if (anomalyDiscovered || anomalyScanState === "scanning") return;
+    setAnomalyScanState("scanning");
+    if (anomalyTimer.current) window.clearTimeout(anomalyTimer.current);
+    anomalyTimer.current = window.setTimeout(() => {
+      setAnomalyScanState("done");
+      setAnomalyDiscovered(true);
+      showToast("✨ Odznaka zdobyta: Badacz Anomalii!");
+    }, 2000);
+  }, [anomalyDiscovered, anomalyScanState, showToast]);
+
   const handleSelect = useCallback((id) => {
     if (phase !== "play") return;
     setSelectedId(id);
     markPlanetDiscovered(id);
+
+    /* Anomalia Copernix — skupienie kamery + własna karta, z pominięciem logiki misji */
+    if (id === ANOMALY_ID) {
+      focusPlanet(ANOMALY_ID);
+      return;
+    }
 
     /* misja 4: kliknięcie Ziemi najpierw skupia kamerę; lądowanie startuje z CTA */
     if (PLANET_FOCUS_IDS.has(id)) {
@@ -2059,7 +2177,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const selectedPlanetDiscovered = selectedId ? discoveredPlanetSet.has(selectedId) : false;
 
   const allDone = completed.length >= MISSIONS.length;
-  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || descentOpen || badgesOpen || detectFlash;
+  const anomalyCardOpen = selectedId === ANOMALY_ID;
+  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || descentOpen || badgesOpen || detectFlash;
   const showSceneLabels = phase === "play" && !majorOverlayOpen;
   /* subtelny dryf kamery tylko w spoczynku: brak zaznaczonej planety, brak Terra/overlay, brak modala */
   const idleDrift = phase === "play" && cameraMode === "free" && !selectedId && !majorOverlayOpen;
@@ -2093,6 +2212,13 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
         />
 
         <Sun onSelect={handleSelect} selected={selectedId} showLabels={showSceneLabels} />
+        <SpaceAnomaly
+          onSelect={handleSelect}
+          selected={selectedId === ANOMALY_ID}
+          discovered={anomalyDiscovered}
+          showLabels={showSceneLabels}
+          reveal={reveal}
+        />
         <SolarPlanets
           clock={clock}
           onSelect={handleSelect}
@@ -2215,6 +2341,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                     : `Pilot Układu — ${discoveredPlanetCount}/${PLANET_DISCOVERY_TOTAL} planet`}
                 </span>
               </div>
+              <div style={{ ...S.panelBadge, ...(anomalyDiscovered ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{anomalyDiscovered ? "✨" : "🔒"}</span>
+                <span>{anomalyDiscovered ? "Badacz Anomalii" : "Badacz Anomalii — zeskanuj anomalię"}</span>
+              </div>
               <input style={S.pilotInput} value={pilot} maxLength={14} onChange={(e) => setPilot(e.target.value)} aria-label="Imię pilota" />
             </div>
           )}
@@ -2289,6 +2419,32 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
               <div style={S.infoFact}>💡 {selectedInfo.fact}</div>
               {selectedId === "earth" && (
                 <button style={S.landBtn} onClick={openDescent}>🌍 LĄDUJ NA ZIEMI</button>
+              )}
+            </div>
+          )}
+
+          {/* KARTA ANOMALII — własny przepływ skanowania */}
+          {anomalyCardOpen && (
+            <div style={S.infoCard}>
+              <button style={S.infoClose} onClick={() => setSelectedId(null)}>✕</button>
+              <div style={S.infoName}>✨ Anomalia Copernix</div>
+              <div style={S.infoType}>Nieznany sygnał energetyczny</div>
+              {anomalyDiscovered ? (
+                <>
+                  <div style={S.infoDiscovered}>✅ Sygnał zapisany</div>
+                  <div style={S.infoFact}>💡 Luna zarchiwizowała sygnał. Zdobyłeś odznakę „Badacz Anomalii"!</div>
+                </>
+              ) : (
+                <>
+                  <div style={S.infoFact}>💡 Luna wykrywa nieznany sygnał w przestrzeni. To pole energii, które można zeskanować.</div>
+                  <button
+                    style={{ ...S.landBtn, ...(anomalyScanState === "scanning" ? { opacity: 0.7, cursor: "default" } : {}) }}
+                    onClick={scanAnomaly}
+                    disabled={anomalyScanState === "scanning"}
+                  >
+                    {anomalyScanState === "scanning" ? "⏳ Skanowanie..." : "🔍 Skanuj"}
+                  </button>
+                </>
               )}
             </div>
           )}
