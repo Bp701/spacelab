@@ -568,12 +568,26 @@ function SpaceDust({ reveal }) {
   const nearMat = useRef();
   const farPos = useMemo(() => makeDustPositions(IS_MOBILE ? 900 : 1500, 10, 60, 30), []);
   const nearPos = useMemo(() => makeDustPositions(IS_MOBILE ? 220 : 420, 6, 26, 16), []);
+  const { camera } = useThree();
+  const prevCam = useRef(new THREE.Vector3());
+  const speedRef = useRef(0);
+  const initRef = useRef(false);
   useFrame((_, dt) => {
     const v = reveal.current.v;
-    if (far.current) far.current.rotation.y += dt * 0.004;
-    if (near.current) near.current.rotation.y -= dt * 0.009; // bliższa warstwa „przepływa" szybciej → parallaksa
+    /* prędkość kamery → wrażenie kierunkowego przelotu (parallaksa zależna od ruchu) */
+    if (!initRef.current) { prevCam.current.copy(camera.position); initRef.current = true; }
+    const moved = camera.position.distanceTo(prevCam.current);
+    prevCam.current.copy(camera.position);
+    const instSpeed = dt > 0 ? Math.min(6, moved / dt) : 0;
+    speedRef.current += (instSpeed - speedRef.current) * Math.min(1, dt * 5); // wygładzenie
+    const s = speedRef.current;
+    if (far.current) far.current.rotation.y += dt * (0.004 + s * 0.004);
+    if (near.current) near.current.rotation.y -= dt * (0.009 + s * 0.05); // bliższa warstwa „przepływa" szybciej → parallaksa kierunkowa
     if (farMat.current) farMat.current.opacity = 0.5 * v;
-    if (nearMat.current) nearMat.current.opacity = 0.7 * v;
+    if (nearMat.current) {
+      nearMat.current.opacity = (0.7 + Math.min(0.25, s * 0.12)) * v; // jaśniejsza przy ruchu
+      nearMat.current.size = 0.11 + Math.min(0.09, s * 0.05); // delikatne „rozciągnięcie" punktów
+    }
   });
   return (
     <group>
@@ -913,21 +927,25 @@ function AuroraShow({ step, earthPos }) {
       auroraGroup.current.rotation.y = t * 0.25;
     }
     const shimmer = 0.55 + 0.25 * Math.sin(t * 2.2);
+    const baseByIndex = [1, 0.72, 0.5, 0.85]; // ring0, ring1, ring2, glow sprite
     [auroraN.current, auroraS.current].forEach((grp, gi) => {
       if (!grp) return;
       grp.children.forEach((child, ci) => {
         if (!child.material) return;
-        const base = ci === 0 ? 1 : 0.55;
+        /* falowanie: każda warstwa pulsuje z innym przesunięciem fazy → wrażenie ruchu wstęgi */
+        const wave = 0.78 + 0.22 * Math.sin(t * (1.8 + ci * 0.35) + gi * 1.3 + ci);
+        const base = (baseByIndex[ci] ?? 0.45) * wave;
         const target = showAur ? shimmer * base : 0;
         child.material.opacity += (target - child.material.opacity) * Math.min(1, dt * 3);
       });
-      const sc = 1 + 0.05 * Math.sin(t * 2.2 + gi);
+      const sc = 1 + 0.06 * Math.sin(t * 2.2 + gi);
       grp.scale.set(sc, 1, sc);
     });
   });
 
   const ringY = EARTH_R * 0.8;
   const ringR = EARTH_R * 0.55;
+  const auroraGlowTex = useMemo(() => makeRadialGlow("rgba(120,255,190,0.85)", "rgba(47,230,200,0)", 128), []);
 
   return (
     <group>
@@ -945,7 +963,7 @@ function AuroraShow({ step, earthPos }) {
         ))}
       </group>
 
-      {/* zorza: owale świetlne nad biegunami */}
+      {/* zorza: wielowarstwowe wstęgi świetlne nad biegunami (nie zakrywają całej Ziemi) */}
       <group ref={auroraGroup}>
         <group ref={auroraN} position={[0, ringY, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <mesh raycast={() => null}>
@@ -956,6 +974,15 @@ function AuroraShow({ step, earthPos }) {
             <torusGeometry args={[ringR, 0.03, 10, 64]} />
             <meshBasicMaterial color="#7FE8FF" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
           </mesh>
+          {!IS_MOBILE && (
+            <mesh raycast={() => null} scale={1.68}>
+              <torusGeometry args={[ringR, 0.022, 8, 64]} />
+              <meshBasicMaterial color="#B6FFE0" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+            </mesh>
+          )}
+          <sprite raycast={() => null} scale={[ringR * 3.4, ringR * 3.4, 1]}>
+            <spriteMaterial map={auroraGlowTex} transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+          </sprite>
         </group>
         <group ref={auroraS} position={[0, -ringY, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <mesh raycast={() => null}>
@@ -966,6 +993,15 @@ function AuroraShow({ step, earthPos }) {
             <torusGeometry args={[ringR, 0.03, 10, 64]} />
             <meshBasicMaterial color="#7FE8FF" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
           </mesh>
+          {!IS_MOBILE && (
+            <mesh raycast={() => null} scale={1.68}>
+              <torusGeometry args={[ringR, 0.022, 8, 64]} />
+              <meshBasicMaterial color="#B6FFE0" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+            </mesh>
+          )}
+          <sprite raycast={() => null} scale={[ringR * 3.4, ringR * 3.4, 1]}>
+            <spriteMaterial map={auroraGlowTex} transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+          </sprite>
         </group>
       </group>
     </group>
@@ -1146,8 +1182,64 @@ function DistantStarSirius({ onSelect, selected, phase, showLabels }) {
   );
 }
 
+/** V6.5: VFX skanowania Ziemi z satelity Copernix-1 — puls, wiązka danych, rozbłysk */
+function SatScanFx({ satGroup }) {
+  const ring = useRef();
+  const ringMat = useRef();
+  const burst = useRef();
+  const burstMat = useRef();
+  const beam = useRef();
+  const beamMat = useRef();
+  const tRef = useRef(0);
+  const glowTex = useMemo(() => makeRadialGlow("rgba(120,230,255,0.9)", "rgba(47,180,224,0)", 128), []);
+  const beamGeom = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+    return g;
+  }, []);
+  useFrame((_, dt) => {
+    tRef.current += dt;
+    const t = tRef.current;
+    const DUR = 1.8;
+    const p = Math.min(1, t / DUR);
+    if (ring.current && ringMat.current) {
+      const sc = EARTH_R * (1.1 + p * 2.0);
+      ring.current.scale.set(sc, sc, sc);
+      ringMat.current.opacity = Math.max(0, 0.7 * (1 - p));
+    }
+    if (burst.current && burstMat.current) {
+      const flash = t < 0.25 ? t / 0.25 : Math.max(0, 1 - (t - 0.25) / 0.85);
+      burstMat.current.opacity = 0.85 * flash;
+      const bs = EARTH_R * (1.4 + flash * 1.2);
+      burst.current.scale.set(bs, bs, 1);
+    }
+    if (beam.current && beamMat.current && satGroup.current) {
+      const sp = satGroup.current.position;
+      const arr = beamGeom.attributes.position.array;
+      arr[0] = sp.x; arr[1] = sp.y; arr[2] = sp.z;
+      arr[3] = 0; arr[4] = 0; arr[5] = 0;
+      beamGeom.attributes.position.needsUpdate = true;
+      beamMat.current.opacity = (0.45 + 0.45 * Math.sin(t * 18)) * (1 - p * 0.35);
+    }
+  });
+  return (
+    <group>
+      <mesh ref={ring} rotation={[Math.PI / 2, 0, 0]} raycast={() => null}>
+        <torusGeometry args={[1, 0.04, 10, 64]} />
+        <meshBasicMaterial ref={ringMat} color="#7FE8FF" transparent opacity={0.7} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </mesh>
+      <sprite ref={burst} raycast={() => null} scale={[EARTH_R * 1.6, EARTH_R * 1.6, 1]}>
+        <spriteMaterial ref={burstMat} map={glowTex} transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+      <line ref={beam} geometry={beamGeom} raycast={() => null}>
+        <lineBasicMaterial ref={beamMat} color="#9BE7FF" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </line>
+    </group>
+  );
+}
+
 /** Ziemia + chmury + atmosfera + Księżyc + satelita Copernix-1 */
-function EarthSystem({ clock, earthPos, moonPos, onSelect, selected, guardianActive, reveal, phase, showLabels }) {
+function EarthSystem({ clock, earthPos, moonPos, onSelect, selected, guardianActive, reveal, phase, showLabels, scanActive }) {
   const group = useRef();
   const earthMesh = useRef();
   const cloudsMesh = useRef();
@@ -1244,6 +1336,8 @@ function EarthSystem({ clock, earthPos, moonPos, onSelect, selected, guardianAct
           <meshStandardMaterial color="#B9C2CF" roughness={0.95} />
           {selected === "moon" && <SelectionRing radius={MOON_R + 0.25} />}
         </mesh>
+
+        {scanActive && <SatScanFx satGroup={satGroup} />}
       </group>
     </>
   );
@@ -1739,12 +1833,14 @@ function CameraDirector({
   const detectT = useRef(0);
   const focusT = useRef(0);
   const systemT = useRef(0);
+  const earthT = useRef(0);
   const lastFocusId = useRef(null);
 
   useEffect(() => {
     if (mode === "launch") launchT.current = 0;
     if (mode === "detect") detectT.current = 0;
     if (mode === "system") systemT.current = 0;
+    if (mode === "earth") earthT.current = 0;
     if (mode === "focus") {
       focusT.current = 0;
       lastFocusId.current = null;
@@ -1803,9 +1899,12 @@ function CameraDirector({
       camera.updateProjectionMatrix();
       if (dT >= 2.6) onDetectDone();
     } else if (mode === "earth") {
+      /* krótkie kinowe wejście: łagodny start → stabilizacja (bez dezorientacji) */
+      earthT.current = Math.min(1, earthT.current + dt / 1.1);
+      const e = easeInOut(earthT.current);
       tmp.copy(ep).add(new THREE.Vector3(3.2, 1.4, 3.2));
-      camera.position.lerp(tmp, 0.06);
-      if (ctrl) { ctrl.target.lerp(ep, 0.1); ctrl.update(); }
+      camera.position.lerp(tmp, 0.03 + 0.05 * e);
+      if (ctrl) { ctrl.target.lerp(ep, 0.06 + 0.06 * e); ctrl.update(); }
     } else if (mode === "moon") {
       const mp = moonPos.current;
       tmp.copy(mp).add(new THREE.Vector3(0.9, 0.35, 0.9));
@@ -2279,6 +2378,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const [siriusDiscovered, setSiriusDiscovered] = useState(() => {
     try { return window.localStorage.getItem(SIRIUS_DISCOVERED_KEY) === "true"; } catch { return false; }
   });
+  const [descentFx, setDescentFx] = useState(false);
+  const [satScanFxActive, setSatScanFxActive] = useState(false);
+  const descentFxTimer = useRef(null);
+  const satScanFxTimer = useRef(null);
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -2319,6 +2422,12 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       @keyframes cx-winpulse { from { opacity:.45; } to { opacity:1; } }
       .cx-pin { animation: cx-pin 1.5s ease-in-out infinite; }
       .cx-glowwin { animation: cx-winpulse 1.6s ease-in-out infinite alternate; }
+      @keyframes cx-atmo { 0% { opacity:0; transform:scale(0.65); } 22% { opacity:1; } 100% { opacity:0; transform:scale(2.0); } }
+      @keyframes cx-streaks { 0% { opacity:0; background-position:0 -40%; } 25% { opacity:0.85; } 100% { opacity:0; background-position:0 60%; } }
+      @keyframes cx-shake { 0%,100% { transform:translate(0,0); } 20% { transform:translate(-3px,2px); } 40% { transform:translate(3px,-2px); } 60% { transform:translate(-2px,-3px); } 80% { transform:translate(2px,3px); } }
+      @keyframes cx-hud-in { 0% { opacity:0; transform:translateY(8px) scale(0.96); } 18% { opacity:1; transform:none; } 82% { opacity:1; } 100% { opacity:0; }
+      }
+      .cx-descent-shake { animation: cx-shake 0.5s ease-in-out 3; }
       @media (max-width: 640px) {
         .cx-objective-bar {
           top: 8px !important;
@@ -2434,6 +2543,11 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   useEffect(() => {
     try { window.localStorage.setItem(SIRIUS_DISCOVERED_KEY, siriusDiscovered ? "true" : "false"); } catch { /* bez zapisu */ }
   }, [siriusDiscovered]);
+
+  useEffect(() => () => {
+    if (descentFxTimer.current) window.clearTimeout(descentFxTimer.current);
+    if (satScanFxTimer.current) window.clearTimeout(satScanFxTimer.current);
+  }, []);
 
   /* auto-postęp: wybór Ziemi → krok „land" */
   useEffect(() => {
@@ -2573,6 +2687,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setFocusedPlanetId(null);
     setDetectFlash(false);
     setCameraMode("earth");
+    /* kinowy błysk wejścia w atmosferę (DOM, mobile-safe) */
+    setDescentFx(true);
+    if (descentFxTimer.current) window.clearTimeout(descentFxTimer.current);
+    descentFxTimer.current = window.setTimeout(() => setDescentFx(false), 1600);
   }, []);
 
   const handleDescentFinish = useCallback(() => {
@@ -2598,6 +2716,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const scanEarthFromSatellite = useCallback(() => {
     if (satelliteScanDone) return;
     setSatelliteScanDone(true);
+    /* VFX: puls wokół Ziemi + wiązka danych z satelity + rozbłysk */
+    setSatScanFxActive(true);
+    if (satScanFxTimer.current) window.clearTimeout(satScanFxTimer.current);
+    satScanFxTimer.current = window.setTimeout(() => setSatScanFxActive(false), 1900);
     showToast("📡 Sygnał z Ziemi zapisany · Odznaka: Operator Satelity!");
   }, [satelliteScanDone, showToast]);
 
@@ -2959,7 +3081,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           clock={clock} earthPos={earthPos} moonPos={moonPos}
           onSelect={handleSelect} selected={selectedId}
           guardianActive={guardianActive} reveal={reveal} phase={phase}
-          showLabels={showSceneLabels}
+          showLabels={showSceneLabels} scanActive={satScanFxActive}
         />
         <DwarfPlanetPluto
           clock={clock} onSelect={handleSelect} selected={selectedId}
@@ -3004,7 +3126,13 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
         />
 
         <EffectComposer>
-          <Bloom intensity={IS_MOBILE ? 1.2 : 1.4} luminanceThreshold={0.2} luminanceSmoothing={0.62} mipmapBlur />
+          {/* mobile: niższa intensywność + wyższy próg luminancji → Słońce się nie prześwietla */}
+          <Bloom
+            intensity={IS_MOBILE ? 1.0 : 1.4}
+            luminanceThreshold={IS_MOBILE ? 0.28 : 0.2}
+            luminanceSmoothing={0.62}
+            mipmapBlur
+          />
           <Vignette eskil={false} offset={0.18} darkness={0.8} />
         </EffectComposer>
       </Canvas>
@@ -3312,6 +3440,20 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       {/* SEKWENCJA SKALI: Ziemia → Polska → Warmia → Olsztyn → Dom */}
       <DescentSequence open={descentOpen} pilot={pilot} onFinish={handleDescentFinish} onClose={handleDescentClose} />
 
+      {/* KINOWE WEJŚCIE W ATMOSFERĘ — krótki błysk DOM (poświata + smugi + drżenie + HUD) */}
+      {descentFx && (
+        <div style={S.descentFxOverlay} aria-hidden="true">
+          <div className="cx-descent-shake" style={S.descentFxInner}>
+            <div style={S.descentFxAtmo} />
+            <div style={S.descentFxStreaks} />
+            <div style={S.descentFxHudWrap}>
+              <div style={S.descentFxHud}>🛰 WCHODZIMY W ATMOSFERĘ</div>
+              <div style={S.descentFxHudSub}>Stabilizacja toru lotu…</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TOAST */}
       {toast && (
         <div style={{ ...S.toast, borderColor: toast.ok ? "#5EE6A0" : "#FFB02E" }}>{toast.msg}</div>
@@ -3616,6 +3758,37 @@ const S = {
   descentClose: {
     position: "absolute", top: 14, right: 18, background: "transparent", border: "none",
     color: "#6E89AB", fontSize: 22, cursor: "pointer", zIndex: 2,
+  },
+  descentFxOverlay: {
+    position: "fixed", inset: 0, zIndex: 6000, pointerEvents: "none", overflow: "hidden",
+    display: "flex", alignItems: "center", justifyContent: "center",
+  },
+  descentFxInner: { position: "absolute", inset: 0 },
+  descentFxAtmo: {
+    position: "absolute", inset: "-12%",
+    background: "radial-gradient(60% 48% at 50% 86%, rgba(120,210,255,0.55), rgba(47,140,224,0.22) 42%, rgba(3,5,12,0) 72%)",
+    transformOrigin: "50% 88%",
+    animation: "cx-atmo 1.6s ease-out forwards",
+  },
+  descentFxStreaks: {
+    position: "absolute", inset: 0,
+    background: "repeating-linear-gradient(180deg, rgba(207,232,255,0) 0px, rgba(207,232,255,0.5) 2px, rgba(207,232,255,0) 9px)",
+    backgroundSize: "100% 26%",
+    mixBlendMode: "screen",
+    animation: "cx-streaks 1.4s linear forwards",
+  },
+  descentFxHudWrap: {
+    position: "absolute", left: 0, right: 0, top: "16%",
+    textAlign: "center", animation: "cx-hud-in 1.6s ease forwards",
+  },
+  descentFxHud: {
+    fontFamily: "ui-monospace, Consolas, monospace", fontSize: "clamp(15px, 4.4vw, 26px)", fontWeight: 900,
+    letterSpacing: 2, color: "#EAF6FF",
+    textShadow: "0 0 14px rgba(120,210,255,0.9), 0 2px 18px rgba(0,0,0,0.8)",
+  },
+  descentFxHudSub: {
+    marginTop: 6, fontFamily: "ui-monospace, Consolas, monospace", fontSize: "clamp(10px, 2.6vw, 13px)",
+    color: "#9FD6FF", letterSpacing: 1,
   },
   descentTop: { textAlign: "center", marginBottom: 12, animation: "cx-fadein 0.5s ease-out both" },
   descentTitle: {
