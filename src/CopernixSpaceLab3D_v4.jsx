@@ -124,6 +124,22 @@ const PLANET_AUDIO_FACTS = {
 const ANOMALY_ID = "anomaly";
 const ANOMALY_STORAGE_KEY = "spacelab_anomaly_discovered";
 const AURORA_STORAGE_KEY = "spacelab_aurora_mission_done";
+
+/* ---------------- Misja Dominika (prowadzony tryb demo) ---------------- */
+const DOMINIK_DEMO_KEY = "spacelab_dominik_demo_done";
+const DOMINIK_BADGE_ID = "dominik-explorer"; // dopisywany do współdzielonego spacelab_badges
+const GUIDE_STEPS = ["start", "earth", "land", "terra", "katedra", "lyna", "most", "complete"];
+const GUIDE_COUNTABLE = 7; // start..most
+const GUIDE_TEXT = {
+  start: "Zaczynamy kosmiczną wyprawę. Najpierw znajdź Ziemię.",
+  earth: "Kliknij Ziemię. To nasz dom w Układzie Słonecznym.",
+  land: "Świetnie. Teraz wyląduj na Ziemi i poleć do Olsztyna.",
+  terra: "Jesteśmy w Olsztynie. Odkryj trzy miejsca misji.",
+  katedra: "Odkryj Katedrę św. Jakuba.",
+  lyna: "Odkryj rzekę Łynę.",
+  most: "Odkryj most lub park misji.",
+  complete: "Misja ukończona. Dominik został Odkrywcą Olsztyna!",
+};
 /* poza orbitą Jowisza (22.5), przed Saturnem (30), uniesiona nad ekliptyką — dobrze widoczna w Easy Pilot */
 const ANOMALY_POS = new THREE.Vector3(-16.6, 3.1, 22.4);
 
@@ -2146,6 +2162,11 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     try { return window.localStorage.getItem(AURORA_STORAGE_KEY) === "true"; } catch { return false; }
   });
   const auroraTimers = useRef([]);
+  const [guideActive, setGuideActive] = useState(false);
+  const [guideStep, setGuideStep] = useState("start");
+  const [dominikDemoDone, setDominikDemoDone] = useState(() => {
+    try { return window.localStorage.getItem(DOMINIK_DEMO_KEY) === "true"; } catch { return false; }
+  });
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -2285,6 +2306,20 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   }, [auroraMissionDone]);
 
   useEffect(() => () => { auroraTimers.current.forEach((id) => window.clearTimeout(id)); }, []);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(DOMINIK_DEMO_KEY, dominikDemoDone ? "true" : "false"); } catch { /* bez zapisu */ }
+  }, [dominikDemoDone]);
+
+  /* auto-postęp: wybór Ziemi → krok „land" */
+  useEffect(() => {
+    if (guideActive && guideStep === "earth" && selectedId === "earth") setGuideStep("land");
+  }, [guideActive, guideStep, selectedId]);
+
+  /* auto-postęp: wejście w Terra Mode (hideSceneLabels) → krok „terra" */
+  useEffect(() => {
+    if (guideActive && guideStep === "land" && hideSceneLabels) setGuideStep("terra");
+  }, [guideActive, guideStep, hideSceneLabels]);
 
   useEffect(() => {
     try { window.localStorage.setItem(PROBE_STORAGE_KEY, JSON.stringify(probeMissions)); } catch { /* bez zapisu */ }
@@ -2491,6 +2526,37 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     speakPolish("Słońce wysyła niewidzialny wiatr. Ziemia ma tarczę magnetyczną. Cząstki lecą ku biegunom i tam rozświetlają niebo. Tak powstaje zorza.");
   };
 
+  /* ---------- Misja Dominika (prowadzony tryb) ---------- */
+  const startGuide = () => {
+    setSelectedId(null);
+    setAuroraPanelOpen(false);
+    setGuideStep("start");
+    setGuideActive(true);
+    setCameraMode("system"); // szeroki widok — łatwo znaleźć Ziemię
+  };
+  const endGuide = () => {
+    setGuideActive(false);
+  };
+  const completeGuide = () => {
+    setGuideStep("complete");
+    setDominikDemoDone(true);
+    try {
+      const merged = Array.from(new Set([...lsGetArray(SHARED_BADGES_KEY), DOMINIK_BADGE_ID]));
+      lsSet(SHARED_BADGES_KEY, JSON.stringify(merged));
+    } catch { /* bez zapisu */ }
+    showToast("🚀 Odznaka zdobyta: Odkrywca Misji Dominika!");
+  };
+  const guideNext = () => {
+    const i = GUIDE_STEPS.indexOf(guideStep);
+    const next = GUIDE_STEPS[i + 1];
+    if (!next) return;
+    if (next === "complete") completeGuide();
+    else setGuideStep(next);
+  };
+  const speakGuide = () => {
+    speakPolish(GUIDE_TEXT[guideStep] || "");
+  };
+
   /* ---------- Panel testowy: resety i skróty demo ---------- */
   const TERRA_REFRESH_NOTE = "Odśwież stronę, aby zobaczyć pełny reset Terra";
 
@@ -2526,7 +2592,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   };
   const debugResetAll = () => {
     if (typeof window !== "undefined" && !window.confirm("Na pewno zresetować cały postęp?")) return;
-    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, AURORA_STORAGE_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY].forEach(lsRemove);
+    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, AURORA_STORAGE_KEY, DOMINIK_DEMO_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY].forEach(lsRemove);
     setDiscoveredPlanets([]);
     setProbeMissions({});
     setActiveProbe(null);
@@ -2536,6 +2602,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     clearAuroraTimers();
     setAuroraStep("idle");
     setAuroraMissionDone(false);
+    setGuideActive(false);
+    setDominikDemoDone(false);
     setDebugNote(`Zresetowano wszystko. ${TERRA_REFRESH_NOTE}`);
   };
 
@@ -2564,6 +2632,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setAnomalyScanState("done");
     lsSet(AURORA_STORAGE_KEY, "true");
     setAuroraMissionDone(true);
+    lsSet(DOMINIK_DEMO_KEY, "true");
+    setDominikDemoDone(true);
     lsSet(TERRA_DISCOVERED_KEY, JSON.stringify(DEBUG_TERRA_IDS));
     lsSet(TERRA_BEACONS_KEY, JSON.stringify(DEBUG_TERRA_IDS));
     debugMergeBadges();
@@ -2837,6 +2907,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                 <span style={{ fontSize: 18 }}>{auroraMissionDone ? "🌌" : "🔒"}</span>
                 <span>{auroraMissionDone ? "Łowca Zorzy" : "Łowca Zorzy — uruchom pokaz pogody kosmicznej"}</span>
               </div>
+              <div style={{ ...S.panelBadge, ...(dominikDemoDone ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{dominikDemoDone ? "🚀" : "🔒"}</span>
+                <span>{dominikDemoDone ? "Odkrywca Misji Dominika" : "Odkrywca Misji Dominika — ukończ prowadzoną misję"}</span>
+              </div>
               <input style={S.pilotInput} value={pilot} maxLength={14} onChange={(e) => setPilot(e.target.value)} aria-label="Imię pilota" />
             </div>
           )}
@@ -3018,6 +3092,36 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       <div style={S.microFooter}>
         ℹ️ uproszczona wizualizacja edukacyjna · skala nieprawdziwa · to nie system astronomiczny ani ostrzegawczy · dane: NASA NeoWs · v4
       </div>
+
+      {/* ================= MISJA DOMINIKA (prowadzony tryb) ================= */}
+      {phase === "play" && !guideActive && (
+        <button type="button" style={S.dominikStart} onClick={startGuide}>
+          {dominikDemoDone ? "🚀 Misja Dominika ukończona" : "🚀 Start Misja Dominika"}
+        </button>
+      )}
+      {guideActive && (
+        <div style={S.guidePanel} aria-label="Misja Dominika">
+          <div style={S.guideHead}>
+            <span style={S.guideTitle}>🚀 Misja Dominika</span>
+            {guideStep !== "complete" && (
+              <span style={S.guideStepNo}>Krok {GUIDE_STEPS.indexOf(guideStep) + 1}/{GUIDE_COUNTABLE}</span>
+            )}
+          </div>
+          <div style={S.guideText}>{GUIDE_TEXT[guideStep]}</div>
+          {guideStep === "complete" && (
+            <div style={S.guideDone}>🚀 Odznaka: Odkrywca Misji Dominika</div>
+          )}
+          <div style={S.guideActions}>
+            {guideStep !== "complete" && (
+              <button type="button" style={S.guideNextBtn} onClick={guideNext}>Dalej →</button>
+            )}
+            <button type="button" style={S.guideSmallBtn} onClick={speakGuide}>🔊 Luna mówi</button>
+            <button type="button" style={S.guideSmallBtn} onClick={endGuide}>
+              {guideStep === "complete" ? "Zamknij" : "Zakończ misję"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ================= PANEL TESTOWY (DEBUG) ================= */}
       <button
@@ -3337,5 +3441,37 @@ const S = {
   },
   debugDisclaimer: {
     fontSize: 10, lineHeight: 1.35, color: "#8AA0C0", marginTop: 4,
+  },
+
+  /* MISJA DOMINIKA */
+  dominikStart: {
+    position: "fixed", top: 12, left: 12, zIndex: 45,
+    border: "1px solid rgba(255,176,46,0.6)", borderRadius: 999,
+    padding: "10px 15px", cursor: "pointer",
+    background: "linear-gradient(135deg, #FFD36E, #FFB02E)", color: "#241303",
+    fontSize: 13.5, fontWeight: 900, lineHeight: 1,
+    boxShadow: "0 4px 18px rgba(255,176,46,0.4)",
+  },
+  guidePanel: {
+    position: "fixed", top: 64, right: 12, zIndex: 5000,
+    width: "min(300px, calc(100vw - 24px))",
+    background: "rgba(8,10,28,0.95)", backdropFilter: "blur(8px)",
+    border: "1px solid rgba(255,176,46,0.5)", borderRadius: 14,
+    padding: "12px 14px", boxShadow: "0 8px 30px rgba(0,0,0,0.55)",
+  },
+  guideHead: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  guideTitle: { fontSize: 14.5, fontWeight: 900, color: "#FFE2A6" },
+  guideStepNo: { flexShrink: 0, fontSize: 11, fontWeight: 900, color: "#9FB6D4" },
+  guideText: { fontSize: 13.5, lineHeight: 1.4, color: "#E6EEF8", margin: "6px 0 10px" },
+  guideDone: { fontSize: 13.5, fontWeight: 900, color: "#5EE6A0", margin: "0 0 10px" },
+  guideActions: { display: "flex", flexWrap: "wrap", gap: 7 },
+  guideNextBtn: {
+    flex: "1 1 100%", padding: "10px 12px", borderRadius: 10, border: "none", cursor: "pointer",
+    fontWeight: 900, fontSize: 14, background: "linear-gradient(135deg, #FFD36E, #FFB02E)", color: "#241303",
+  },
+  guideSmallBtn: {
+    flex: "1 1 auto", padding: "9px 11px", borderRadius: 10, cursor: "pointer",
+    fontWeight: 900, fontSize: 12.5, border: "1px solid rgba(159,182,212,0.3)",
+    background: "rgba(12,20,48,0.78)", color: "#E6EEF8",
   },
 };
