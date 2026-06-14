@@ -73,6 +73,10 @@ const MOON_R = 0.26;
 const SAT_ORBIT_R = 1.45;
 const AST_MIN_R = 8.5;
 const AST_MAX_R = 17;
+/* V6.4.1: Pluton orbituje poza Neptunem (46); Syriusz to odległa gwiazda poza Układem */
+const PLUTO_ORBIT_R = 54;
+const PLUTO_R = 0.2;
+const SIRIUS_POS = new THREE.Vector3(34, 17, -46);
 
 const SOLAR_PLANETS = [
   {
@@ -128,6 +132,11 @@ const PLANET_AUDIO_FACTS = {
 const ANOMALY_ID = "anomaly";
 const ANOMALY_STORAGE_KEY = "spacelab_anomaly_discovered";
 const AURORA_STORAGE_KEY = "spacelab_aurora_mission_done";
+
+/* ---------------- V6.4.1 — interaktywne obiekty (satelita / Pluton / Syriusz) ---------------- */
+const SATELLITE_SCAN_KEY = "spacelab_satellite_scan_done";
+const PLUTO_DISCOVERED_KEY = "spacelab_pluto_discovered";
+const SIRIUS_DISCOVERED_KEY = "spacelab_sirius_discovered";
 
 /* ---------------- Misja Dominika (prowadzony tryb demo) ---------------- */
 const DOMINIK_DEMO_KEY = "spacelab_dominik_demo_done";
@@ -358,10 +367,22 @@ const BODY_INFO = {
     fact: "Było tam 12 osób — ich ślady zostaną na miliony lat, bo nie ma wiatru!",
   },
   satellite: {
-    name: "Copernix-1", type: "🛰 Satelita obserwacyjny",
+    name: "Copernix-1", type: "🛰 Satelita badawczy",
     distance: "Niska orbita okołoziemska (~550 km)",
     speed: "28 000 km/h — okrążenie Ziemi w 90 minut!",
-    fact: "Satelity pomagają w prognozie pogody, GPS i internecie. Nad Twoją głową przelatuje ich kilka TYSIĘCY!",
+    fact: "To mały satelita misji Copernix. Obserwuje Ziemię i pomaga Lunie zbierać sygnały.",
+  },
+  pluto: {
+    name: "Pluton", type: "🧊 Planeta karłowata",
+    distance: "Daleko za Neptunem, na skraju Układu Słonecznego",
+    speed: "Okrąża Słońce raz na 248 lat ziemskich",
+    fact: "Pluton jest bardzo daleko od Słońca. Kiedyś nazywano go dziewiątą planetą.",
+  },
+  sirius: {
+    name: "Syriusz", type: "⭐ Gwiazda",
+    distance: "Około 8,6 lat świetlnych od Ziemi",
+    speed: "Świeci znacznie jaśniej niż nasze Słońce",
+    fact: "Syriusz to jedna z najjaśniejszych gwiazd na nocnym niebie.",
   },
 };
 
@@ -1049,6 +1070,79 @@ function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal, planetP
         )}
       </group>
     </>
+  );
+}
+
+/** V6.4.1: Pluton — mała planeta karłowata poza orbitą Neptuna, klikalna */
+function DwarfPlanetPluto({ clock, onSelect, selected, phase, reveal, showLabels }) {
+  const group = useRef();
+  const mesh = useRef();
+  const pos = useMemo(() => new THREE.Vector3(), []);
+  const isSel = selected === "pluto";
+
+  useFrame((_, dt) => {
+    const a = 1.1 + clock.current.t * 0.006;
+    const x = Math.cos(a) * PLUTO_ORBIT_R;
+    const z = Math.sin(a) * PLUTO_ORBIT_R;
+    const y = Math.sin(a * 0.8) * 1.4;
+    pos.set(x, y, z);
+    if (group.current) group.current.position.copy(pos);
+    if (mesh.current) mesh.current.rotation.y += dt * 0.18;
+  });
+
+  return (
+    <>
+      <OrbitRing
+        radius={PLUTO_ORBIT_R}
+        color={isSel ? "#2FE6C8" : "#243A62"}
+        opacity={isSel ? 0.8 : 0.22}
+        reveal={reveal}
+      />
+      <group ref={group}>
+        <mesh ref={mesh} onClick={(e) => { e.stopPropagation(); onSelect("pluto"); }}>
+          <sphereGeometry args={[PLUTO_R, 24, 24]} />
+          <meshStandardMaterial
+            color="#C9BBA8" roughness={0.95} metalness={0.03}
+            emissive="#2A2218" emissiveIntensity={isSel ? 0.22 : 0.05}
+          />
+        </mesh>
+        {isSel && <SelectionRing radius={PLUTO_R + 0.24} />}
+        {phase === "play" && showLabels && (
+          <Html position={[0, PLUTO_R + 0.45, 0]} center distanceFactor={30} style={labelStyle(isSel)}>🧊 Pluton</Html>
+        )}
+      </group>
+    </>
+  );
+}
+
+/** V6.4.1: Syriusz — jasna, odległa gwiazda poza Układem Słonecznym, klikalna */
+function DistantStarSirius({ onSelect, selected, phase, showLabels }) {
+  const glowRef = useRef();
+  const glowTex = useMemo(() => makeRadialGlow("rgba(190,222,255,0.9)", "rgba(120,170,255,0)", 128), []);
+  const isSel = selected === "sirius";
+
+  useFrame((state) => {
+    if (glowRef.current) {
+      const t = state.clock.elapsedTime;
+      const s = (isSel ? 5.6 : 4.4) + 0.5 * Math.sin(t * 3);
+      glowRef.current.scale.set(s, s, 1);
+    }
+  });
+
+  return (
+    <group position={SIRIUS_POS}>
+      <sprite ref={glowRef} raycast={() => null}>
+        <spriteMaterial map={glowTex} transparent opacity={0.9} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+      <mesh onClick={(e) => { e.stopPropagation(); onSelect("sirius"); }}>
+        <sphereGeometry args={[0.62, 24, 24]} />
+        <meshBasicMaterial color="#DCEBFF" toneMapped={false} />
+      </mesh>
+      {isSel && <SelectionRing radius={1.15} />}
+      {phase === "play" && showLabels && (
+        <Html position={[0, 1.3, 0]} center distanceFactor={44} style={labelStyle(isSel)}>⭐ Syriusz</Html>
+      )}
+    </group>
   );
 }
 
@@ -2176,6 +2270,15 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     try { return cityHasAllTypes(loadCityLayout()) || lsGetArray(SHARED_BADGES_KEY).includes(CITY_BADGE_ID); } catch { return false; }
   });
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [satelliteScanDone, setSatelliteScanDone] = useState(() => {
+    try { return window.localStorage.getItem(SATELLITE_SCAN_KEY) === "true"; } catch { return false; }
+  });
+  const [plutoDiscovered, setPlutoDiscovered] = useState(() => {
+    try { return window.localStorage.getItem(PLUTO_DISCOVERED_KEY) === "true"; } catch { return false; }
+  });
+  const [siriusDiscovered, setSiriusDiscovered] = useState(() => {
+    try { return window.localStorage.getItem(SIRIUS_DISCOVERED_KEY) === "true"; } catch { return false; }
+  });
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -2319,6 +2422,18 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   useEffect(() => {
     try { window.localStorage.setItem(DOMINIK_DEMO_KEY, dominikDemoDone ? "true" : "false"); } catch { /* bez zapisu */ }
   }, [dominikDemoDone]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(SATELLITE_SCAN_KEY, satelliteScanDone ? "true" : "false"); } catch { /* bez zapisu */ }
+  }, [satelliteScanDone]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(PLUTO_DISCOVERED_KEY, plutoDiscovered ? "true" : "false"); } catch { /* bez zapisu */ }
+  }, [plutoDiscovered]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(SIRIUS_DISCOVERED_KEY, siriusDiscovered ? "true" : "false"); } catch { /* bez zapisu */ }
+  }, [siriusDiscovered]);
 
   /* auto-postęp: wybór Ziemi → krok „land" */
   useEffect(() => {
@@ -2480,6 +2595,12 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setDiscoveredPlanets((ids) => (ids.includes(id) ? ids : [...ids, id]));
   }, []);
 
+  const scanEarthFromSatellite = useCallback(() => {
+    if (satelliteScanDone) return;
+    setSatelliteScanDone(true);
+    showToast("📡 Sygnał z Ziemi zapisany · Odznaka: Operator Satelity!");
+  }, [satelliteScanDone, showToast]);
+
   const scanAnomaly = useCallback(() => {
     if (anomalyDiscovered || anomalyScanState === "scanning") return;
     setAnomalyScanState("scanning");
@@ -2606,9 +2727,22 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setCityArchitectUnlocked(false);
     setDebugNote("Zresetowano City Builder.");
   };
+  const debugResetExtras = () => {
+    [SATELLITE_SCAN_KEY, PLUTO_DISCOVERED_KEY, SIRIUS_DISCOVERED_KEY].forEach(lsRemove);
+    setSatelliteScanDone(false);
+    setPlutoDiscovered(false);
+    setSiriusDiscovered(false);
+    setDebugNote("Zresetowano: satelita, Pluton, Syriusz.");
+  };
+  const debugUnlockExtras = () => {
+    lsSet(SATELLITE_SCAN_KEY, "true"); setSatelliteScanDone(true);
+    lsSet(PLUTO_DISCOVERED_KEY, "true"); setPlutoDiscovered(true);
+    lsSet(SIRIUS_DISCOVERED_KEY, "true"); setSiriusDiscovered(true);
+    setDebugNote("Odblokowano: satelita, Pluton, Syriusz.");
+  };
   const debugResetAll = () => {
     if (typeof window !== "undefined" && !window.confirm("Na pewno zresetować cały postęp?")) return;
-    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, AURORA_STORAGE_KEY, DOMINIK_DEMO_KEY, CITY_LAYOUT_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY].forEach(lsRemove);
+    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, AURORA_STORAGE_KEY, DOMINIK_DEMO_KEY, CITY_LAYOUT_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY, SATELLITE_SCAN_KEY, PLUTO_DISCOVERED_KEY, SIRIUS_DISCOVERED_KEY].forEach(lsRemove);
     setDiscoveredPlanets([]);
     setProbeMissions({});
     setActiveProbe(null);
@@ -2621,6 +2755,9 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setGuideActive(false);
     setDominikDemoDone(false);
     setCityArchitectUnlocked(false);
+    setSatelliteScanDone(false);
+    setPlutoDiscovered(false);
+    setSiriusDiscovered(false);
     setDebugNote(`Zresetowano wszystko. ${TERRA_REFRESH_NOTE}`);
   };
 
@@ -2655,6 +2792,9 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setCityArchitectUnlocked(true);
     lsSet(TERRA_DISCOVERED_KEY, JSON.stringify(DEBUG_TERRA_IDS));
     lsSet(TERRA_BEACONS_KEY, JSON.stringify(DEBUG_TERRA_IDS));
+    lsSet(SATELLITE_SCAN_KEY, "true"); setSatelliteScanDone(true);
+    lsSet(PLUTO_DISCOVERED_KEY, "true"); setPlutoDiscovered(true);
+    lsSet(SIRIUS_DISCOVERED_KEY, "true"); setSiriusDiscovered(true);
     debugMergeBadges();
     setDebugNote(`Odblokowano wszystko. ${TERRA_REFRESH_NOTE}`);
   };
@@ -2667,6 +2807,22 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     /* Anomalia Copernix — skupienie kamery + własna karta, z pominięciem logiki misji */
     if (id === ANOMALY_ID) {
       focusPlanet(ANOMALY_ID);
+      return;
+    }
+
+    /* V6.4.1: Pluton i Syriusz — własne karty + odznaki, z pominięciem logiki misji */
+    if (id === "pluto") {
+      if (!plutoDiscovered) {
+        setPlutoDiscovered(true);
+        showToast("🧊 Odznaka zdobyta: Odkrywca Plutona!");
+      }
+      return;
+    }
+    if (id === "sirius") {
+      if (!siriusDiscovered) {
+        setSiriusDiscovered(true);
+        showToast("⭐ Odznaka zdobyta: Tropiciel Gwiazd!");
+      }
       return;
     }
 
@@ -2710,7 +2866,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       window.setTimeout(() => completeCurrentMission(), 3000);
       return;
     }
-  }, [phase, missionIndex, scanTargetId, scanCount, asteroids, completed, planetQuestDone, completeCurrentMission, pickScanTarget, showToast, openDescent, focusPlanet, speakPlanet, markPlanetDiscovered]);
+  }, [phase, missionIndex, scanTargetId, scanCount, asteroids, completed, planetQuestDone, plutoDiscovered, siriusDiscovered, completeCurrentMission, pickScanTarget, showToast, openDescent, focusPlanet, speakPlanet, markPlanetDiscovered]);
 
   const selectedInfo = useMemo(() => {
     if (!selectedId) return null;
@@ -2734,8 +2890,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     auroraStep === "solarWind" ? "Wiatr słoneczny"
       : auroraStep === "magnetosphere" ? "Pole magnetyczne Ziemi"
         : auroraStep === "aurora" ? "Zorza polarna" : "";
-  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || cityOpen || galleryOpen || descentOpen || badgesOpen || detectFlash;
+  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || cityOpen || galleryOpen || descentOpen || badgesOpen || detectFlash || (IS_MOBILE && guideActive);
   const showSceneLabels = phase === "play" && !majorOverlayOpen;
+  /* V6.4.1: na telefonie, gdy otwarta karta obiektu, kompaktowy panel misji Dominika (nie zasłania przycisków) */
+  const guideCompact = IS_MOBILE && guideActive && (!!selectedInfo || anomalyCardOpen || auroraPanelOpen);
   /* subtelny dryf kamery tylko w spoczynku: brak zaznaczonej planety, brak Terra/overlay, brak modala */
   const idleDrift = phase === "play" && cameraMode === "free" && !selectedId && !majorOverlayOpen;
 
@@ -2802,6 +2960,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           onSelect={handleSelect} selected={selectedId}
           guardianActive={guardianActive} reveal={reveal} phase={phase}
           showLabels={showSceneLabels}
+        />
+        <DwarfPlanetPluto
+          clock={clock} onSelect={handleSelect} selected={selectedId}
+          phase={phase} reveal={reveal} showLabels={showSceneLabels}
+        />
+        <DistantStarSirius
+          onSelect={handleSelect} selected={selectedId}
+          phase={phase} showLabels={showSceneLabels}
         />
         {asteroids.map((a) => {
           // reduce clutter: if asteroid has very small miss distance (close pass), render minimal placeholder
@@ -2934,6 +3100,18 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                 <span style={{ fontSize: 18 }}>{cityArchitectUnlocked ? "🏗️" : "🔒"}</span>
                 <span>{cityArchitectUnlocked ? "Architekt Copernix" : "Architekt Copernix — zbuduj miasto z 7 typów elementów"}</span>
               </div>
+              <div style={{ ...S.panelBadge, ...(satelliteScanDone ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{satelliteScanDone ? "📡" : "🔒"}</span>
+                <span>{satelliteScanDone ? "Operator Satelity" : "Operator Satelity — zeskanuj Ziemię z Copernix-1"}</span>
+              </div>
+              <div style={{ ...S.panelBadge, ...(plutoDiscovered ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{plutoDiscovered ? "🧊" : "🔒"}</span>
+                <span>{plutoDiscovered ? "Odkrywca Plutona" : "Odkrywca Plutona — znajdź Pluton za Neptunem"}</span>
+              </div>
+              <div style={{ ...S.panelBadge, ...(siriusDiscovered ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{siriusDiscovered ? "⭐" : "🔒"}</span>
+                <span>{siriusDiscovered ? "Tropiciel Gwiazd" : "Tropiciel Gwiazd — odkryj gwiazdę Syriusz"}</span>
+              </div>
               <input style={S.pilotInput} value={pilot} maxLength={14} onChange={(e) => setPilot(e.target.value)} aria-label="Imię pilota" />
             </div>
           )}
@@ -3032,6 +3210,18 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
               <div style={S.infoFact}>💡 {selectedInfo.fact}</div>
               {selectedId === "earth" && (
                 <button style={S.landBtn} onClick={openDescent}>🌍 LĄDUJ NA ZIEMI</button>
+              )}
+              {selectedId === "satellite" && (
+                <>
+                  {satelliteScanDone && <div style={S.infoDiscovered}>✅ Sygnał z Ziemi zapisany</div>}
+                  <button
+                    style={{ ...S.probeBtn, ...(satelliteScanDone ? { opacity: 0.7, cursor: "default" } : {}) }}
+                    onClick={scanEarthFromSatellite}
+                    disabled={satelliteScanDone}
+                  >
+                    {satelliteScanDone ? "📡 Ziemia zeskanowana" : "📡 Zeskanuj Ziemię"}
+                  </button>
+                </>
               )}
               {selectedId && PLANET_DISCOVERY_ID_SET.has(selectedId) && (
                 <>
@@ -3138,7 +3328,24 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           {dominikDemoDone ? "🚀 Misja Dominika ukończona" : "🚀 Start Misja Dominika"}
         </button>
       )}
-      {guideActive && (
+      {guideActive && guideCompact && (
+        <div style={S.guidePanelCompact} aria-label="Misja Dominika">
+          <div style={S.guideCompactText}>
+            🚀 Misja Dominika
+            {guideStep !== "complete" ? ` · Krok ${GUIDE_STEPS.indexOf(guideStep) + 1}/${GUIDE_COUNTABLE}` : " · ukończona"}
+          </div>
+          <div style={S.guideCompactActions}>
+            {guideStep !== "complete" && (
+              <button type="button" style={S.guideSmallBtn} onClick={guideNext}>Dalej →</button>
+            )}
+            <button type="button" style={S.guideSmallBtn} onClick={speakGuide}>🔊 Luna mówi</button>
+            <button type="button" style={S.guideSmallBtn} onClick={endGuide}>
+              {guideStep === "complete" ? "Zamknij" : "Zakończ"}
+            </button>
+          </div>
+        </div>
+      )}
+      {guideActive && !guideCompact && (
         <div style={S.guidePanel} aria-label="Misja Dominika">
           <div style={S.guideHead}>
             <span style={S.guideTitle}>🚀 Misja Dominika</span>
@@ -3195,11 +3402,13 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           <button type="button" style={S.debugBtn} onClick={debugResetBeacons}>Resetuj znaczniki</button>
           <button type="button" style={S.debugBtn} onClick={debugResetBadges}>Resetuj odznaki</button>
           <button type="button" style={S.debugBtn} onClick={debugResetCity}>Resetuj City Builder</button>
+          <button type="button" style={S.debugBtn} onClick={debugResetExtras}>Resetuj satelitę/Pluton/Syriusz</button>
           <button type="button" style={{ ...S.debugBtn, ...S.debugBtnDanger }} onClick={debugResetAll}>Resetuj wszystko</button>
 
           <div style={S.debugGroupLabel}>Skróty demo</div>
           <button type="button" style={{ ...S.debugBtn, ...S.debugBtnGood }} onClick={debugUnlockPlanets}>Odblokuj planety</button>
           <button type="button" style={{ ...S.debugBtn, ...S.debugBtnGood }} onClick={debugUnlockTerra}>Odblokuj Terra</button>
+          <button type="button" style={{ ...S.debugBtn, ...S.debugBtnGood }} onClick={debugUnlockExtras}>Odblokuj satelitę/Pluton/Syriusz</button>
           <button type="button" style={{ ...S.debugBtn, ...S.debugBtnGood }} onClick={debugUnlockAll}>Odblokuj wszystko</button>
 
           {debugNote && <div style={S.debugNote}>{debugNote}</div>}
@@ -3525,4 +3734,13 @@ const S = {
     fontWeight: 900, fontSize: 12.5, border: "1px solid rgba(159,182,212,0.3)",
     background: "rgba(12,20,48,0.78)", color: "#E6EEF8",
   },
+  guidePanelCompact: {
+    position: "fixed", top: 8, left: 8, right: 8, zIndex: 5000,
+    background: "rgba(8,10,28,0.96)", backdropFilter: "blur(8px)",
+    border: "1px solid rgba(255,176,46,0.5)", borderRadius: 12,
+    padding: "8px 10px", boxShadow: "0 8px 30px rgba(0,0,0,0.55)",
+    display: "flex", flexDirection: "column", gap: 6,
+  },
+  guideCompactText: { fontSize: 12.5, fontWeight: 900, color: "#FFE2A6", lineHeight: 1.3 },
+  guideCompactActions: { display: "flex", gap: 6, flexWrap: "wrap" },
 };
