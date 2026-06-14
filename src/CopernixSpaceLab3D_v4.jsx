@@ -441,7 +441,7 @@ function OrbitRing({ radius, inclination = 0, color = "#1E3A5F", opacity = 0.5, 
   );
 }
 
-function Sun({ onSelect, selected }) {
+function Sun({ onSelect, selected, showLabels }) {
   const coronaTex = useMemo(() => makeRadialGlow("rgba(255,210,90,0.9)", "rgba(255,120,20,0.25)"), []);
   const ref = useRef();
   useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * 0.04; });
@@ -455,12 +455,14 @@ function Sun({ onSelect, selected }) {
       <sprite scale={[SUN_R * 7, SUN_R * 7, 1]} raycast={() => null}>
         <spriteMaterial map={coronaTex} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
       </sprite>
-      <Html position={[0, SUN_R + 1.6, 0]} center distanceFactor={40} style={labelStyle(selected === "sun")}>☀️ Słońce</Html>
+      {showLabels && (
+        <Html position={[0, SUN_R + 1.6, 0]} center distanceFactor={40} style={labelStyle(selected === "sun")}>☀️ Słońce</Html>
+      )}
     </group>
   );
 }
 
-function SolarPlanets({ clock, onSelect, selected, phase, reveal, planetPositions }) {
+function SolarPlanets({ clock, onSelect, selected, phase, reveal, planetPositions, showLabels }) {
   return (
     <>
       {SOLAR_PLANETS.map((planet) => (
@@ -473,13 +475,14 @@ function SolarPlanets({ clock, onSelect, selected, phase, reveal, planetPosition
           phase={phase}
           reveal={reveal}
           planetPositions={planetPositions}
+          showLabels={showLabels}
         />
       ))}
     </>
   );
 }
 
-function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal, planetPositions }) {
+function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal, planetPositions, showLabels }) {
   const group = useRef();
   const mesh = useRef();
   const pos = useMemo(() => new THREE.Vector3(), []);
@@ -529,7 +532,7 @@ function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal, planetP
         )}
 
         {selectedPlanet && <SelectionRing radius={planet.radius + 0.34} />}
-        {phase === "play" && (
+        {phase === "play" && showLabels && (
           <Html position={[0, planet.radius + 0.55, 0]} center distanceFactor={34} style={labelStyle(selectedPlanet)}>
             {planet.icon} {planet.label}
           </Html>
@@ -540,7 +543,7 @@ function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal, planetP
 }
 
 /** Ziemia + chmury + atmosfera + Księżyc + satelita Copernix-1 */
-function EarthSystem({ clock, earthPos, moonPos, onSelect, selected, guardianActive, reveal, phase }) {
+function EarthSystem({ clock, earthPos, moonPos, onSelect, selected, guardianActive, reveal, phase, showLabels }) {
   const group = useRef();
   const earthMesh = useRef();
   const cloudsMesh = useRef();
@@ -581,7 +584,7 @@ function EarthSystem({ clock, earthPos, moonPos, onSelect, selected, guardianAct
     }
   });
 
-  const showLabels = phase === "play";
+  const showEarthLabels = phase === "play" && showLabels;
 
   return (
     <>
@@ -606,7 +609,7 @@ function EarthSystem({ clock, earthPos, moonPos, onSelect, selected, guardianAct
             <meshBasicMaterial color="#2FE6C8" wireframe transparent opacity={0.3} toneMapped={false} />
           </mesh>
         )}
-        {showLabels && (
+        {showEarthLabels && (
           <Html position={[0, EARTH_R + 1.0, 0]} center distanceFactor={30} style={labelStyle(selected === "earth")}>🌍 Ziemia</Html>
         )}
 
@@ -626,7 +629,7 @@ function EarthSystem({ clock, earthPos, moonPos, onSelect, selected, guardianAct
             <meshStandardMaterial color="#1B4FA0" metalness={0.5} roughness={0.35} emissive="#123A7A" emissiveIntensity={0.4} />
           </mesh>
           {selected === "satellite" && <SelectionRing radius={0.32} />}
-          {showLabels && (
+          {showEarthLabels && (
             <Html position={[0, 0.3, 0]} center distanceFactor={16} style={labelStyle(selected === "satellite")}>🛰 Copernix-1</Html>
           )}
         </group>
@@ -691,7 +694,7 @@ function PingRing({ radius }) {
 /* ============================================================
    ASTEROIDY-KOMETY: dynamiczny ogon + wejście w atmosferę
    ============================================================ */
-function Asteroid({ data, clock, onSelect, selected, isScanTarget, reveal, phase, earthPos, scanTargetPos, minimal }) {
+function Asteroid({ data, clock, onSelect, selected, isScanTarget, reveal, phase, earthPos, scanTargetPos, minimal, showLabels }) {
   const ref = useRef();
   const matRef = useRef();
   const glowObj = useRef();
@@ -858,7 +861,7 @@ function Asteroid({ data, clock, onSelect, selected, isScanTarget, reveal, phase
         {sel && <SelectionRing radius={params.size + 0.35} />}
         {isScanTarget && <ScanMarker radius={params.size + 0.5} />}
         {isScanTarget && <PingRing radius={params.size + 0.55} />}
-        {phase === "play" && (sel || isScanTarget) && (
+        {phase === "play" && showLabels && (sel || isScanTarget) && (
           <Html position={[0, params.size + 0.55, 0]} center distanceFactor={36} style={labelStyle(true)}>
             {isScanTarget ? "📡 " : "☄️ "}{data.name}
           </Html>
@@ -1610,7 +1613,7 @@ function DescentSequence({ open, pilot, onFinish, onClose }) {
 /* ============================================================
    GŁÓWNY KOMPONENT
    ============================================================ */
-export default function CopernixSpaceLab3D() {
+export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const [phase, setPhase] = useState("intro"); // intro | launch | play
   const [asteroids, setAsteroids] = useState(MOCK_ASTEROIDS);
   const [dataSource, setDataSource] = useState("loading");
@@ -1887,6 +1890,8 @@ export default function CopernixSpaceLab3D() {
   }, [selectedId, asteroids]);
 
   const allDone = completed.length >= MISSIONS.length;
+  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || descentOpen || badgesOpen || detectFlash;
+  const showSceneLabels = phase === "play" && !majorOverlayOpen;
 
   return (
     <div style={S.app} translate="no" onContextMenu={(e) => e.preventDefault()}>
@@ -1916,7 +1921,7 @@ export default function CopernixSpaceLab3D() {
           onPilotMove={handlePilotMove}
         />
 
-        <Sun onSelect={handleSelect} selected={selectedId} />
+        <Sun onSelect={handleSelect} selected={selectedId} showLabels={showSceneLabels} />
         <SolarPlanets
           clock={clock}
           onSelect={handleSelect}
@@ -1924,11 +1929,13 @@ export default function CopernixSpaceLab3D() {
           phase={phase}
           reveal={reveal}
           planetPositions={planetPositions}
+          showLabels={showSceneLabels}
         />
         <EarthSystem
           clock={clock} earthPos={earthPos} moonPos={moonPos}
           onSelect={handleSelect} selected={selectedId}
           guardianActive={guardianActive} reveal={reveal} phase={phase}
+          showLabels={showSceneLabels}
         />
         {asteroids.map((a) => {
           // reduce clutter: if asteroid has very small miss distance (close pass), render minimal placeholder
@@ -1941,6 +1948,7 @@ export default function CopernixSpaceLab3D() {
               reveal={reveal} phase={phase}
               earthPos={earthPos} scanTargetPos={scanTargetPos}
               minimal={minimal}
+              showLabels={showSceneLabels}
             />
           );
         })}

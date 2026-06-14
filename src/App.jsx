@@ -7,7 +7,7 @@ export default function App() {
 
   return (
     <>
-      <CopernixSpaceLab3D />
+      <CopernixSpaceLab3D hideSceneLabels={terraMode} />
       {!terraMode && (
         <button
           type="button"
