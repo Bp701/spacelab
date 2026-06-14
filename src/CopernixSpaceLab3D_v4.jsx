@@ -1668,6 +1668,70 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       @keyframes cx-winpulse { from { opacity:.45; } to { opacity:1; } }
       .cx-pin { animation: cx-pin 1.5s ease-in-out infinite; }
       .cx-glowwin { animation: cx-winpulse 1.6s ease-in-out infinite alternate; }
+      @media (max-width: 640px) {
+        .cx-objective-bar {
+          top: 8px !important;
+          left: 8px !important;
+          transform: none !important;
+          box-sizing: border-box !important;
+          max-width: calc(100vw - 212px) !important;
+          min-width: 0 !important;
+          padding: 6px 8px !important;
+          gap: 5px !important;
+          border-radius: 14px !important;
+          overflow: hidden !important;
+        }
+        .cx-objective-dots {
+          gap: 3px !important;
+        }
+        .cx-objective-dot {
+          width: 6px !important;
+          height: 6px !important;
+        }
+        .cx-objective-text {
+          font-size: 11px !important;
+          line-height: 1.15 !important;
+        }
+        .cx-objective-subtext {
+          font-size: 9px !important;
+          line-height: 1.1 !important;
+        }
+        .cx-badge-toggle {
+          display: none !important;
+        }
+        .cx-dock {
+          bottom: 18px !important;
+          display: grid !important;
+          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          width: calc(100vw - 20px) !important;
+          max-width: 370px !important;
+          gap: 5px !important;
+          padding: 6px !important;
+          border-radius: 16px !important;
+          box-sizing: border-box !important;
+        }
+        .cx-dock-divider,
+        .cx-mobile-hide {
+          display: none !important;
+        }
+        .cx-dock-btn,
+        .cx-dock-text-btn {
+          min-height: 44px !important;
+          min-width: 0 !important;
+          width: 100% !important;
+          padding: 7px 6px !important;
+          font-size: 11px !important;
+          line-height: 1.05 !important;
+          white-space: normal !important;
+          text-align: center !important;
+        }
+        .cx-controls-hint {
+          bottom: 170px !important;
+          max-width: calc(100vw - 20px) !important;
+          font-size: 10px !important;
+          padding: 5px 8px !important;
+        }
+      }
     `;
     document.head.appendChild(style);
     return () => {
@@ -1994,23 +2058,23 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       {phase === "play" && (
         <>
           {/* CEL MISJI — jedna linia u góry */}
-          <div style={S.objectiveBar}>
-            <span style={S.objectiveDots}>
+          <div className="cx-objective-bar" style={S.objectiveBar}>
+            <span className="cx-objective-dots" style={S.objectiveDots}>
               {MISSIONS.map((m, i) => (
-                <span key={m.id} style={{ ...S.dot, ...(completed.includes(m.id) ? S.dotDone : i === missionIndex ? S.dotActive : {}) }} />
+                <span key={m.id} className="cx-objective-dot" style={{ ...S.dot, ...(completed.includes(m.id) ? S.dotDone : i === missionIndex ? S.dotActive : {}) }} />
               ))}
             </span>
             <span style={S.objectiveTextGroup}>
-              <span style={S.objectiveText}>
+              <span className="cx-objective-text" style={S.objectiveText}>
                 {planetQuestDone ? "✔ Misja wykonana: Mars odnaleziony!" : "🎯 Znajdź Marsa"}
               </span>
-              <span style={S.objectiveSubText}>
+              <span className="cx-objective-subtext" style={S.objectiveSubText}>
                 {allDone && missionIndex >= 4
                   ? `🛡 Strażnik ${pilot} na służbie · skany: ${scanCount}`
                   : currentMission.objective}
               </span>
             </span>
-            <button style={S.badgeToggle} onClick={() => setBadgesOpen((o) => !o)} title="Odznaki">
+            <button className="cx-badge-toggle" style={S.badgeToggle} onClick={() => setBadgesOpen((o) => !o)} title="Odznaki">
               🏅
             </button>
           </div>
@@ -2031,15 +2095,16 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
             </div>
           )}
 
-          <div style={S.controlsHint}>
+          <div className="cx-controls-hint" style={S.controlsHint}>
             Sterowanie: WASD ruch · mysz obrót · kółko zoom · klik planeta
           </div>
 
           {/* DOCK — czas + kamera w jednym slim pasku */}
-          <div style={S.dock}>
+          <div className="cx-dock" style={S.dock}>
             <button
               onClick={returnToSolarSystem}
               title="Powrót do szerokiego widoku Układu Słonecznego"
+              className="cx-dock-text-btn"
               style={{ ...S.dockTextBtn, ...(cameraMode === "system" ? S.dockBtnActive : {}) }}
             >
               🏠 Układ Słoneczny
@@ -2047,15 +2112,17 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
             <button
               onClick={toggleEasyPilot}
               title="WASD rusza kamerą, mysz obraca, kółko przybliża"
+              className="cx-dock-text-btn"
               style={{ ...S.dockTextBtn, ...(easyPilotEnabled ? S.dockBtnActive : {}) }}
             >
               🎮 Easy Pilot
             </button>
-            <span style={S.dockDivider} />
+            <span className="cx-dock-divider" style={S.dockDivider} />
             <button
               onClick={toggleVoiceMuted}
               title={voiceMuted ? "Włącz głos planet" : "Wycisz głos planet"}
               aria-label={voiceMuted ? "Włącz głos planet" : "Wycisz głos planet"}
+              className="cx-dock-btn cx-mobile-hide"
               style={{ ...S.dockBtn, ...(!voiceMuted ? S.dockBtnActive : {}) }}
             >
               {voiceMuted ? "🔇" : "🔊"}
@@ -2063,20 +2130,23 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
             <button
               onClick={testAudio}
               title="Sprawdź głos Luny"
+              className="cx-dock-text-btn"
               style={S.dockTextBtn}
             >
               🔊 Test audio
             </button>
-            <span style={S.dockDivider} />
+            <span className="cx-dock-divider" style={S.dockDivider} />
             {[[0, "⏸"], [1, "1×"], [10, "10×"], [100, "100×"]].map(([v, label]) => (
               <button key={v} onClick={() => setTimeScale(v)} title={`Czas ${label}`}
+                className={`cx-dock-btn ${v === 0 ? "cx-mobile-hide" : ""}`}
                 style={{ ...S.dockBtn, ...(timeScale === v ? S.dockBtnActive : {}) }}>
                 {label}
               </button>
             ))}
-            <span style={S.dockDivider} />
+            <span className="cx-dock-divider" style={S.dockDivider} />
             {[["earth", "🔭", "Skup na Ziemi"], ["cinematic", "🎬", "Odkrywca Kosmosu"], ["free", "🖐", "Wolna kamera"]].map(([m, icon, title]) => (
               <button key={m} onClick={() => { setFocusedPlanetId(null); setCameraMode(m); }} title={title}
+                className="cx-dock-btn cx-mobile-hide"
                 style={{ ...S.dockBtn, ...(cameraMode === m ? S.dockBtnActive : {}) }}>
                 {icon}
               </button>
