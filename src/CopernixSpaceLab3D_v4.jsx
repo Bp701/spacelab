@@ -6,6 +6,7 @@ import * as THREE from "three";
 import CityBuilderLite, {
   CITY_LAYOUT_KEY, CITY_BADGE_ID, CITY_SAMPLE_LAYOUT, loadCityLayout, cityHasAllTypes,
 } from "./CityBuilderLite";
+import BadgeGallery from "./BadgeGallery";
 
 /* ============================================================
    COPERNIX SPACE LAB 3D — v4 "ŻYWY KOSMOS"
@@ -2174,6 +2175,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const [cityArchitectUnlocked, setCityArchitectUnlocked] = useState(() => {
     try { return cityHasAllTypes(loadCityLayout()) || lsGetArray(SHARED_BADGES_KEY).includes(CITY_BADGE_ID); } catch { return false; }
   });
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -2732,7 +2734,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     auroraStep === "solarWind" ? "Wiatr słoneczny"
       : auroraStep === "magnetosphere" ? "Pole magnetyczne Ziemi"
         : auroraStep === "aurora" ? "Zorza polarna" : "";
-  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || cityOpen || descentOpen || badgesOpen || detectFlash;
+  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || cityOpen || galleryOpen || descentOpen || badgesOpen || detectFlash;
   const showSceneLabels = phase === "play" && !majorOverlayOpen;
   /* subtelny dryf kamery tylko w spoczynku: brak zaznaczonej planety, brak Terra/overlay, brak modala */
   const idleDrift = phase === "play" && cameraMode === "free" && !selectedId && !majorOverlayOpen;
@@ -2974,6 +2976,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
             >
               🏗️ City Builder
             </button>
+            <button
+              onClick={() => setGalleryOpen((o) => !o)}
+              title="Zobacz odznaki i postęp"
+              className="cx-dock-text-btn"
+              style={{ ...S.dockTextBtn, ...(galleryOpen ? S.dockBtnActive : {}) }}
+            >
+              🏅 Postęp
+            </button>
             <span className="cx-dock-divider" style={S.dockDivider} />
             <button
               onClick={toggleVoiceMuted}
@@ -3159,6 +3169,9 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           onArchitectUnlocked={() => setCityArchitectUnlocked(true)}
         />
       )}
+
+      {/* ================= GALERIA ODZNAK / POSTĘP ================= */}
+      {galleryOpen && <BadgeGallery onClose={() => setGalleryOpen(false)} />}
 
       {/* ================= PANEL TESTOWY (DEBUG) ================= */}
       <button
