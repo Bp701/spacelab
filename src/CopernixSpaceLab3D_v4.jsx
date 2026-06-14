@@ -126,6 +126,25 @@ const ANOMALY_STORAGE_KEY = "spacelab_anomaly_discovered";
 /* poza orbitą Jowisza (22.5), przed Saturnem (30), uniesiona nad ekliptyką — dobrze widoczna w Easy Pilot */
 const ANOMALY_POS = new THREE.Vector3(-16.6, 3.1, 22.4);
 
+/* ---------------- Sondy (sandbox) ---------------- */
+const PROBE_STORAGE_KEY = "spacelab_probe_missions";
+
+function loadProbeMissions() {
+  try {
+    const raw = window.localStorage.getItem(PROBE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object") return {};
+    const out = {};
+    for (const id of PLANET_DISCOVERY_IDS) {
+      const n = parsed[id];
+      if (typeof n === "number" && Number.isFinite(n) && n > 0) out[id] = Math.floor(n);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 function getPlanetOrbitPosition(planet, t, out) {
   const a = planet.phase + t * planet.speed;
   const x = Math.cos(a) * planet.orbit;
@@ -614,6 +633,64 @@ function SpaceAnomaly({ onSelect, selected, discovered, showLabels, reveal }) {
       {showLabels && (
         <Html position={[0, 1.9, 0]} center distanceFactor={42} style={labelStyle(selected)}>✨ Anomalia Copernix</Html>
       )}
+    </group>
+  );
+}
+
+/** Sonda — mała kula + poświata + lekki ślad, leci od kamery do wybranej planety. */
+function Probe({ targetId, planetPositions, onArrive }) {
+  const { camera } = useThree();
+  const body = useRef();
+  const glow = useRef();
+  const started = useRef(false);
+  const arrived = useRef(false);
+  const pos = useMemo(() => new THREE.Vector3(), []);
+  const start = useMemo(() => new THREE.Vector3(), []);
+  const tgt = useMemo(() => new THREE.Vector3(), []);
+  const glowTex = useMemo(() => makeRadialGlow("rgba(150,230,255,0.95)", "rgba(60,160,255,0)", 64), []);
+  const trailGeom = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+    return g;
+  }, []);
+
+  useFrame((_, dt) => {
+    const tp = planetPositions.current[targetId];
+    if (!tp || arrived.current) return;
+    if (!started.current) {
+      pos.copy(camera.position);
+      start.copy(camera.position);
+      started.current = true;
+    }
+    tgt.copy(tp);
+    pos.lerp(tgt, Math.min(1, dt * 0.8));
+    if (body.current) body.current.position.copy(pos);
+    if (glow.current) glow.current.position.copy(pos);
+
+    const arr = trailGeom.attributes.position.array;
+    arr[0] = start.x; arr[1] = start.y; arr[2] = start.z;
+    arr[3] = pos.x; arr[4] = pos.y; arr[5] = pos.z;
+    trailGeom.attributes.position.needsUpdate = true;
+
+    const radius = SOLAR_PLANET_BY_ID[targetId]?.radius || 0.8;
+    if (pos.distanceTo(tgt) <= radius + 0.6) {
+      arrived.current = true;
+      onArrive(targetId);
+    }
+  });
+
+  return (
+    <group>
+      <line geometry={trailGeom}>
+        <lineBasicMaterial color="#9BE0FF" transparent opacity={0.5} />
+      </line>
+      <sprite ref={glow} scale={[0.7, 0.7, 1]} raycast={() => null}>
+        <spriteMaterial map={glowTex} transparent opacity={0.85} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+      <mesh ref={body} raycast={() => null}>
+        <sphereGeometry args={[0.12, 16, 16]} />
+        <meshStandardMaterial color="#DDF3FF" emissive="#7FD0FF" emissiveIntensity={1.2} toneMapped={false} />
+      </mesh>
     </group>
   );
 }
@@ -1821,6 +1898,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   });
   const [anomalyScanState, setAnomalyScanState] = useState("idle"); // idle | scanning | done
   const anomalyTimer = useRef(null);
+  const [probeMissions, setProbeMissions] = useState(() => loadProbeMissions());
+  const [activeProbe, setActiveProbe] = useState(null); // { targetId, key } | null
+  const [lastProbeArrival, setLastProbeArrival] = useState(null);
+  const probeKey = useRef(0);
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -1843,6 +1924,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const discoveredPlanetSet = useMemo(() => new Set(discoveredPlanets), [discoveredPlanets]);
   const discoveredPlanetCount = discoveredPlanetSet.size;
   const allPlanetsDiscovered = discoveredPlanetCount >= PLANET_DISCOVERY_TOTAL;
+  const probeTotal = useMemo(() => Object.values(probeMissions).reduce((sum, n) => sum + n, 0), [probeMissions]);
+  const probePlanetsCount = Object.keys(probeMissions).length;
+  const probeOperatorBadge = probeTotal >= 1;
+  const probeResearcherBadge = probePlanetsCount >= 3;
 
   /* globalny fullscreen + animacje CSS */
   useEffect(() => {
@@ -1950,6 +2035,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   }, [anomalyDiscovered]);
 
   useEffect(() => () => { if (anomalyTimer.current) window.clearTimeout(anomalyTimer.current); }, []);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(PROBE_STORAGE_KEY, JSON.stringify(probeMissions)); } catch { /* bez zapisu */ }
+  }, [probeMissions]);
 
   useEffect(() => {
     return () => {
@@ -2108,6 +2197,19 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     }, 2000);
   }, [anomalyDiscovered, anomalyScanState, showToast]);
 
+  const sendProbe = useCallback((id) => {
+    if (!PLANET_DISCOVERY_ID_SET.has(id) || activeProbe) return; // tylko realne planety, jedna sonda naraz
+    setLastProbeArrival(null);
+    setActiveProbe({ targetId: id, key: probeKey.current++ });
+  }, [activeProbe]);
+
+  const onProbeArrive = useCallback((id) => {
+    setProbeMissions((m) => ({ ...m, [id]: (m[id] || 0) + 1 }));
+    setLastProbeArrival(id);
+    setActiveProbe(null);
+    showToast(`🛰️ Sonda dotarła do: ${BODY_INFO[id]?.name || id}`);
+  }, [showToast]);
+
   const handleSelect = useCallback((id) => {
     if (phase !== "play") return;
     setSelectedId(id);
@@ -2219,6 +2321,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           showLabels={showSceneLabels}
           reveal={reveal}
         />
+        {activeProbe && (
+          <Probe
+            key={activeProbe.key}
+            targetId={activeProbe.targetId}
+            planetPositions={planetPositions}
+            onArrive={onProbeArrive}
+          />
+        )}
         <SolarPlanets
           clock={clock}
           onSelect={handleSelect}
@@ -2345,6 +2455,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                 <span style={{ fontSize: 18 }}>{anomalyDiscovered ? "✨" : "🔒"}</span>
                 <span>{anomalyDiscovered ? "Badacz Anomalii" : "Badacz Anomalii — zeskanuj anomalię"}</span>
               </div>
+              <div style={{ ...S.panelBadge, ...(probeOperatorBadge ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{probeOperatorBadge ? "🚀" : "🔒"}</span>
+                <span>{probeOperatorBadge ? "Operator Sondy" : "Operator Sondy — wyślij sondę"}</span>
+              </div>
+              <div style={{ ...S.panelBadge, ...(probeResearcherBadge ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{probeResearcherBadge ? "🛰️" : "🔒"}</span>
+                <span>{probeResearcherBadge ? "Badacz Planet" : `Badacz Planet — ${probePlanetsCount}/3 planet`}</span>
+              </div>
               <input style={S.pilotInput} value={pilot} maxLength={14} onChange={(e) => setPilot(e.target.value)} aria-label="Imię pilota" />
             </div>
           )}
@@ -2419,6 +2537,25 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
               <div style={S.infoFact}>💡 {selectedInfo.fact}</div>
               {selectedId === "earth" && (
                 <button style={S.landBtn} onClick={openDescent}>🌍 LĄDUJ NA ZIEMI</button>
+              )}
+              {selectedId && PLANET_DISCOVERY_ID_SET.has(selectedId) && (
+                <>
+                  <div style={S.infoRow}>🛰️ Sondy wysłane: {probeMissions[selectedId] || 0}</div>
+                  {lastProbeArrival === selectedId && (
+                    <div style={S.infoDiscovered}>✅ Sonda dotarła do: {BODY_INFO[selectedId]?.name}</div>
+                  )}
+                  <button
+                    style={{ ...S.probeBtn, ...(activeProbe ? { opacity: 0.7, cursor: "default" } : {}) }}
+                    onClick={() => sendProbe(selectedId)}
+                    disabled={!!activeProbe}
+                  >
+                    {activeProbe?.targetId === selectedId
+                      ? "🚀 Sonda w drodze..."
+                      : activeProbe
+                        ? "🚀 Sonda zajęta..."
+                        : "🚀 Wyślij sondę"}
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -2616,6 +2753,12 @@ const S = {
     border: "none", cursor: "pointer", fontWeight: 900, fontSize: 13.5,
     background: "linear-gradient(135deg, #FFB02E, #FF7A2E)", color: "#241303",
     boxShadow: "0 0 14px rgba(255,138,60,0.4)",
+  },
+  probeBtn: {
+    marginTop: 8, width: "100%", padding: "9px 10px", borderRadius: 10,
+    border: "none", cursor: "pointer", fontWeight: 900, fontSize: 13.5,
+    background: "linear-gradient(135deg, #2FE6C8, #1FB8E0)", color: "#04121C",
+    boxShadow: "0 0 14px rgba(47,230,200,0.32)",
   },
 
   /* KAMERA REAKTYWNA */
