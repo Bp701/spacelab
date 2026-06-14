@@ -425,11 +425,44 @@ function makeCloudsTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+/* Pseudo-volumetryczne promienie Słońca (tani „god-ray" w canvasie). */
+function makeSunRays(size = 256) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  const cx = size / 2;
+  const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+  g.addColorStop(0, "rgba(255,228,150,0.55)");
+  g.addColorStop(0.25, "rgba(255,170,60,0.2)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  ctx.translate(cx, cx);
+  const rays = 12;
+  for (let i = 0; i < rays; i++) {
+    ctx.rotate((Math.PI * 2) / rays);
+    const rg = ctx.createLinearGradient(0, 0, 0, -cx);
+    rg.addColorStop(0, "rgba(255,210,120,0)");
+    rg.addColorStop(0.18, "rgba(255,210,120,0.16)");
+    rg.addColorStop(1, "rgba(255,160,60,0)");
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.02, 0);
+    ctx.lineTo(size * 0.02, 0);
+    ctx.lineTo(0, -cx);
+    ctx.closePath();
+    ctx.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
 /* ============================================================
    SCENA — TŁO
    ============================================================ */
 
+/** Mgławice — wielowarstwowe, miękko płynące tło dające głębię i nastrój. */
 function Nebulae() {
+  const group = useRef();
   const sprites = useMemo(() => {
     const defs = [
       { c1: "rgba(130,80,220,0.55)", c2: "rgba(60,20,120,0.18)", pos: [-60, 18, -90], s: 95 },
@@ -437,14 +470,26 @@ function Nebulae() {
       { c1: "rgba(230,80,160,0.35)", c2: "rgba(90,20,70,0.12)", pos: [20, 35, -130], s: 120 },
       { c1: "rgba(80,140,255,0.35)", c2: "rgba(20,40,110,0.12)", pos: [-85, -28, -70], s: 80 },
       { c1: "rgba(255,170,80,0.22)", c2: "rgba(120,60,10,0.08)", pos: [95, 26, -60], s: 70 },
+      /* dwie wielkie, bardzo miękkie warstwy w głębi — poczucie ogromu przestrzeni */
+      { c1: "rgba(90,60,180,0.2)", c2: "rgba(30,15,80,0.06)", pos: [-30, -40, -200], s: 240 },
+      { c1: "rgba(40,150,200,0.16)", c2: "rgba(10,50,90,0.05)", pos: [60, 50, -240], s: 280 },
     ];
-    return defs.map((d) => ({ ...d, tex: makeRadialGlow(d.c1, d.c2) }));
+    const used = IS_MOBILE ? defs.slice(0, 5) : defs;
+    return used.map((d) => ({ ...d, tex: makeRadialGlow(d.c1, d.c2) }));
   }, []);
+  useFrame((state) => {
+    if (!group.current) return;
+    const t = state.clock.elapsedTime;
+    /* bardzo powolny obrót + delikatne falowanie — mgławice „oddychają", nie stoją */
+    group.current.rotation.z = t * 0.004;
+    group.current.position.x = Math.sin(t * 0.03) * 3;
+    group.current.position.y = Math.cos(t * 0.025) * 2;
+  });
   return (
-    <group>
+    <group ref={group}>
       {sprites.map((s, i) => (
         <sprite key={i} position={s.pos} scale={[s.s, s.s, 1]} raycast={() => null}>
-          <spriteMaterial map={s.tex} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
+          <spriteMaterial map={s.tex} transparent depthWrite={false} blending={THREE.AdditiveBlending} fog={false} />
         </sprite>
       ))}
     </group>
@@ -456,38 +501,53 @@ function MilkyWay() {
   const tex = useMemo(() => makeRadialGlow("rgba(190,210,255,0.5)", "rgba(80,110,200,0.12)", 256), []);
   return (
     <sprite position={[20, 55, -220]} scale={[520, 90, 1]} raycast={() => null}>
-      <spriteMaterial map={tex} transparent opacity={0.5} depthWrite={false} blending={THREE.AdditiveBlending} rotation={-0.45} />
+      <spriteMaterial map={tex} transparent opacity={0.5} depthWrite={false} blending={THREE.AdditiveBlending} rotation={-0.45} fog={false} />
     </sprite>
   );
 }
 
-/** Pył kosmiczny — wjeżdża płynnie po starcie misji (reveal) */
+/** Pył kosmiczny — dwie warstwy (daleka + bliska) dla głębi i poczucia lotu przez przestrzeń. */
+function makeDustPositions(count, rMin, rSpread, ySpread) {
+  const arr = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const r = rMin + Math.random() * rSpread;
+    const a = Math.random() * Math.PI * 2;
+    arr[i * 3] = Math.cos(a) * r;
+    arr[i * 3 + 1] = (Math.random() - 0.5) * ySpread;
+    arr[i * 3 + 2] = Math.sin(a) * r;
+  }
+  return arr;
+}
+
 function SpaceDust({ reveal }) {
-  const ref = useRef();
-  const matRef = useRef();
-  const positions = useMemo(() => {
-    const N = 1600;
-    const arr = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
-      const r = 10 + Math.random() * 60;
-      const a = Math.random() * Math.PI * 2;
-      arr[i * 3] = Math.cos(a) * r;
-      arr[i * 3 + 1] = (Math.random() - 0.5) * 30;
-      arr[i * 3 + 2] = Math.sin(a) * r;
-    }
-    return arr;
-  }, []);
+  const far = useRef();
+  const near = useRef();
+  const farMat = useRef();
+  const nearMat = useRef();
+  const farPos = useMemo(() => makeDustPositions(IS_MOBILE ? 900 : 1500, 10, 60, 30), []);
+  const nearPos = useMemo(() => makeDustPositions(IS_MOBILE ? 220 : 420, 6, 26, 16), []);
   useFrame((_, dt) => {
-    if (ref.current) ref.current.rotation.y += dt * 0.004;
-    if (matRef.current) matRef.current.opacity = 0.55 * reveal.current.v;
+    const v = reveal.current.v;
+    if (far.current) far.current.rotation.y += dt * 0.004;
+    if (near.current) near.current.rotation.y -= dt * 0.009; // bliższa warstwa „przepływa" szybciej → parallaksa
+    if (farMat.current) farMat.current.opacity = 0.5 * v;
+    if (nearMat.current) nearMat.current.opacity = 0.7 * v;
   });
   return (
-    <points ref={ref} raycast={() => null}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
-      </bufferGeometry>
-      <pointsMaterial ref={matRef} size={0.07} color="#9FD8FF" transparent opacity={0} sizeAttenuation depthWrite={false} />
-    </points>
+    <group>
+      <points ref={far} raycast={() => null}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={farPos.length / 3} array={farPos} itemSize={3} />
+        </bufferGeometry>
+        <pointsMaterial ref={farMat} size={0.06} color="#7FBEFF" transparent opacity={0} sizeAttenuation depthWrite={false} />
+      </points>
+      <points ref={near} raycast={() => null}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={nearPos.length / 3} array={nearPos} itemSize={3} />
+        </bufferGeometry>
+        <pointsMaterial ref={nearMat} size={0.11} color="#CFE8FF" transparent opacity={0} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
+      </points>
+    </group>
   );
 }
 
@@ -542,10 +602,13 @@ function OrbitRing({ radius, inclination = 0, color = "#1E3A5F", opacity = 0.5, 
 function Sun({ onSelect, selected, showLabels }) {
   const coronaTex = useMemo(() => makeRadialGlow("rgba(255,210,90,0.9)", "rgba(255,120,20,0.25)"), []);
   const haloTex = useMemo(() => makeRadialGlow("rgba(255,180,70,0.5)", "rgba(255,90,20,0)"), []);
+  const raysTex = useMemo(() => makeSunRays(), []);
   const ref = useRef();
   const corona = useRef();
   const halo = useRef();
+  const rays = useRef();
   const haloScale = SUN_R * (IS_MOBILE ? 10 : 13);
+  const raysScale = SUN_R * (IS_MOBILE ? 12 : 16);
   useFrame((state, dt) => {
     if (ref.current) ref.current.rotation.y += dt * 0.04;
     const t = state.clock.elapsedTime;
@@ -558,6 +621,8 @@ function Sun({ onSelect, selected, showLabels }) {
       const s = haloScale * (1 + 0.05 * Math.sin(t * 0.5 + 1));
       halo.current.scale.set(s, s, 1);
     }
+    /* powolny obrót pseudo-volumetrycznych promieni */
+    if (rays.current) rays.current.material.rotation += dt * 0.03;
   });
   return (
     <group>
@@ -566,9 +631,13 @@ function Sun({ onSelect, selected, showLabels }) {
         <sphereGeometry args={[SUN_R, 48, 48]} />
         <meshBasicMaterial color="#FFF6CF" toneMapped={false} />
       </mesh>
+      {/* pseudo god-ray — obraca się wolno za koroną, niskie krycie (mocniej tłumione na mobile) */}
+      <sprite ref={rays} scale={[raysScale, raysScale, 1]} raycast={() => null}>
+        <spriteMaterial map={raysTex} transparent opacity={IS_MOBILE ? 0.2 : 0.32} depthWrite={false} blending={THREE.AdditiveBlending} fog={false} />
+      </sprite>
       {/* szerokie, miękkie halo — głębia świecenia, niskie krycie by nie zakrywać planet */}
       <sprite ref={halo} scale={[haloScale, haloScale, 1]} raycast={() => null}>
-        <spriteMaterial map={haloTex} transparent opacity={IS_MOBILE ? 0.26 : 0.4} depthWrite={false} blending={THREE.AdditiveBlending} />
+        <spriteMaterial map={haloTex} transparent opacity={IS_MOBILE ? 0.26 : 0.4} depthWrite={false} blending={THREE.AdditiveBlending} fog={false} />
       </sprite>
       <sprite ref={corona} scale={[SUN_R * 7, SUN_R * 7, 1]} raycast={() => null}>
         <spriteMaterial map={coronaTex} transparent opacity={IS_MOBILE ? 0.78 : 0.9} depthWrite={false} blending={THREE.AdditiveBlending} />
@@ -2396,6 +2465,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
         dpr={[1, 1.75]}
       >
         <color attach="background" args={["#03050C"]} />
+        {/* bardzo łagodna mgła przestrzenna — głębia tła bez utraty czytelności planet (start daleko: 200) */}
+        <fog attach="fog" args={["#06080F", 200, 700]} />
         <ambientLight intensity={0.16} />
         <Starfield />
         <MilkyWay />
@@ -2480,7 +2551,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
         />
 
         <EffectComposer>
-          <Bloom intensity={1.15} luminanceThreshold={0.22} luminanceSmoothing={0.6} mipmapBlur />
+          <Bloom intensity={IS_MOBILE ? 1.2 : 1.4} luminanceThreshold={0.2} luminanceSmoothing={0.62} mipmapBlur />
           <Vignette eskil={false} offset={0.18} darkness={0.8} />
         </EffectComposer>
       </Canvas>
