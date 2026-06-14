@@ -5,6 +5,39 @@ const landingPath = terraRecipe.layers.map((layer) => layer.name);
 const landingSequence = ["Kosmos", "Ziemia", "Polska", "Warmia", "Olsztyn"];
 const missionTargets = terraRecipe.pointsOfInterest;
 const OLSZTYN_WEATHER_URL = terraRecipe.weather.url;
+const DISCOVERED_STORAGE_KEY = "spacelab_discovered_terra";
+const TERRA_AUDIO_STORAGE_KEY = "spacelab_luna_audio_enabled";
+
+function readStoredStringArray(key) {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function readStoredBoolean(key) {
+  if (typeof window === "undefined") return false;
+
+  try {
+    return window.localStorage.getItem(key) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeStorage(key, value) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Local storage can be unavailable in strict privacy modes.
+  }
+}
 
 function getPolishSpeechVoice(synthesis) {
   const voices = synthesis.getVoices();
@@ -42,6 +75,8 @@ export default function AndromedaBridge({ onClose }) {
   const [activeStep, setActiveStep] = useState(-1);
   const [selectedMission, setSelectedMission] = useState(null);
   const [weatherLabel, setWeatherLabel] = useState(terraRecipe.weather.fallback);
+  const [discoveredIds, setDiscoveredIds] = useState(() => readStoredStringArray(DISCOVERED_STORAGE_KEY));
+  const [audioEnabled, setAudioEnabled] = useState(() => readStoredBoolean(TERRA_AUDIO_STORAGE_KEY));
   const mountedRef = useRef(false);
   const landingTimerRef = useRef(null);
   const narrationPanelRef = useRef(null);
@@ -77,6 +112,14 @@ export default function AndromedaBridge({ onClose }) {
 
     return clearLandingTimer;
   }, [activeStep, landingActive]);
+
+  useEffect(() => {
+    writeStorage(DISCOVERED_STORAGE_KEY, discoveredIds);
+  }, [discoveredIds]);
+
+  useEffect(() => {
+    writeStorage(TERRA_AUDIO_STORAGE_KEY, audioEnabled);
+  }, [audioEnabled]);
 
   useEffect(() => {
     let alive = true;
@@ -121,9 +164,21 @@ export default function AndromedaBridge({ onClose }) {
     onClose();
   };
 
+  const markDiscovered = (targetId) => {
+    setDiscoveredIds((ids) => (ids.includes(targetId) ? ids : [...ids, targetId]));
+  };
+
+  const readMission = (mission) => {
+    setAudioEnabled(true);
+    speakLuna(mission.narration);
+  };
+
   const selectMission = (target) => {
     setSelectedMission(target);
-    speakLuna(target.narration);
+    markDiscovered(target.id);
+    if (audioEnabled) {
+      speakLuna(target.narration);
+    }
     window.requestAnimationFrame(() => {
       narrationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       narrationPanelRef.current?.focus({ preventScroll: true });
@@ -131,6 +186,7 @@ export default function AndromedaBridge({ onClose }) {
   };
 
   const landingComplete = activeStep === landingSequence.length - 1;
+  const selectedMissionDiscovered = selectedMission ? discoveredIds.includes(selectedMission.id) : false;
 
   return (
     <section className="terra-overlay" style={styles.overlay} aria-label="AndromedaBridge Terra Mode">
@@ -203,33 +259,51 @@ export default function AndromedaBridge({ onClose }) {
             </div>
 
             <div className="terra-targets" style={styles.targets} aria-label="Punkty docelowe Olsztyna">
-              {missionTargets.map((target) => (
-                <article
-                  key={target.id}
-                  className="terra-card"
-                  style={{
-                    ...styles.targetCard,
-                    ...(selectedMission?.id === target.id ? styles.targetCardActive : {}),
-                  }}
-                >
-                  <TerraPhoto target={target} />
-                  <h3 style={styles.targetTitle}>{target.icon} {target.name}</h3>
-                  <p style={styles.route}>{target.route}</p>
-                  <p style={styles.luna}>Luna gotowa do narracji terenowej.</p>
-                  <button type="button" onClick={() => selectMission(target)} style={styles.discoverButton}>
-                    Odkryj
-                  </button>
-                </article>
-              ))}
+              {missionTargets.map((target) => {
+                const isDiscovered = discoveredIds.includes(target.id);
+
+                return (
+                  <article
+                    key={target.id}
+                    className="terra-card"
+                    style={{
+                      ...styles.targetCard,
+                      ...(selectedMission?.id === target.id ? styles.targetCardActive : {}),
+                    }}
+                  >
+                    {isDiscovered && <span style={styles.discoveredBadge}>✅ Odkryte</span>}
+                    <TerraPhoto target={target} />
+                    <h3 style={styles.targetTitle}>{target.icon} {target.name}</h3>
+                    <p style={styles.route}>{target.route}</p>
+                    <p style={styles.luna}>Luna gotowa do narracji terenowej.</p>
+                    <button type="button" onClick={() => selectMission(target)} style={styles.discoverButton}>
+                      Odkryj
+                    </button>
+                  </article>
+                );
+              })}
             </div>
 
             {selectedMission && (
               <article ref={narrationPanelRef} tabIndex={-1} style={styles.narrationPanel}>
                 <p style={styles.narrationLabel}>Narracja Luny · 30-60 sekund</p>
                 <h3 style={styles.narrationTitle}>{selectedMission.icon} {selectedMission.name}</h3>
+                {!audioEnabled && (
+                  <p style={styles.audioHint}>Kliknij Czytaj, żeby włączyć głos Luny dla Terra Mode.</p>
+                )}
                 <div style={styles.narrationActions}>
-                  <button type="button" onClick={() => speakLuna(selectedMission.narration)} style={styles.readButton}>
+                  <button type="button" onClick={() => readMission(selectedMission)} style={styles.readButton}>
                     🔊 Czytaj
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markDiscovered(selectedMission.id)}
+                    style={{
+                      ...styles.discoveredButton,
+                      ...(selectedMissionDiscovered ? styles.discoveredButtonActive : {}),
+                    }}
+                  >
+                    ✅ Odkryte
                   </button>
                   <button type="button" onClick={stopLuna} style={styles.stopButton}>
                     ⏹ Stop
@@ -674,6 +748,20 @@ const styles = {
     fontSize: 14,
     lineHeight: 1.45,
   },
+  discoveredBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    width: "fit-content",
+    marginBottom: 10,
+    border: "1px solid rgba(94, 230, 160, 0.42)",
+    borderRadius: 999,
+    padding: "6px 10px",
+    background: "rgba(94, 230, 160, 0.12)",
+    color: "#CFEDE6",
+    fontSize: 12,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
   discoverButton: {
     marginTop: 14,
     border: "none",
@@ -700,6 +788,12 @@ const styles = {
     gap: 8,
     marginTop: 12,
   },
+  audioHint: {
+    margin: "10px 0 0",
+    color: "#FFE2A6",
+    fontSize: 13,
+    lineHeight: 1.45,
+  },
   readButton: {
     border: "none",
     borderRadius: 999,
@@ -721,6 +815,22 @@ const styles = {
     fontSize: 13,
     fontWeight: 900,
     lineHeight: 1,
+  },
+  discoveredButton: {
+    border: "1px solid rgba(94, 230, 160, 0.38)",
+    borderRadius: 999,
+    padding: "9px 13px",
+    background: "rgba(94, 230, 160, 0.1)",
+    color: "#CFEDE6",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
+  discoveredButtonActive: {
+    background: "linear-gradient(135deg, rgba(94, 230, 160, 0.9), rgba(47, 230, 200, 0.9))",
+    color: "#04121C",
+    boxShadow: "0 0 14px rgba(94, 230, 160, 0.24)",
   },
   narrationLabel: {
     margin: "0 0 6px",
