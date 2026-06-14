@@ -15,6 +15,13 @@ const TERRA_MISSION_IDS = missionTargets.map((target) => target.id);
 const TERRA_MISSION_TOTAL = TERRA_MISSION_IDS.length;
 const TERRA_MISSION_ID_SET = new Set(TERRA_MISSION_IDS);
 
+/* V6.4.1: krótkie, przyjazne dzieciom historie do pełnoekranowego podglądu zdjęć */
+const TERRA_STORIES = {
+  katedra: "To jedno z ważnych miejsc starego Olsztyna. Wygląda jak brama do historii miasta.",
+  lyna: "Łyna płynie przez Olsztyn jak niebieska ścieżka. Przy niej można odpocząć i obserwować przyrodę.",
+  most: "Most prowadzi przez wodę jak mała misja przejścia. To dobre miejsce na spacer i odkrywanie miasta.",
+};
+
 function readStoredStringArray(key) {
   if (typeof window === "undefined") return [];
 
@@ -86,6 +93,7 @@ export default function AndromedaBridge({ onClose }) {
   const [audioEnabled, setAudioEnabled] = useState(() => readStoredBoolean(TERRA_AUDIO_STORAGE_KEY));
   const [badges, setBadges] = useState(() => readStoredStringArray(BADGES_STORAGE_KEY));
   const [badgesPanelOpen, setBadgesPanelOpen] = useState(false);
+  const [zoomedTarget, setZoomedTarget] = useState(null);
   const [beacons, setBeacons] = useState(() =>
     readStoredStringArray(TERRA_BEACONS_STORAGE_KEY).filter((id) => TERRA_MISSION_ID_SET.has(id))
   );
@@ -213,6 +221,20 @@ export default function AndromedaBridge({ onClose }) {
   const readMission = (mission) => {
     setAudioEnabled(true);
     speakLuna(mission.narration);
+  };
+
+  const openZoom = (target) => {
+    setZoomedTarget(target);
+  };
+
+  const closeZoom = () => {
+    stopLuna();
+    setZoomedTarget(null);
+  };
+
+  const readStory = (target) => {
+    setAudioEnabled(true);
+    speakLuna(TERRA_STORIES[target.id] || target.narration);
   };
 
   const selectMission = (target) => {
@@ -364,7 +386,17 @@ export default function AndromedaBridge({ onClose }) {
                   >
                     {isDiscovered && <span style={styles.discoveredBadge}>✅ Odkryte</span>}
                     {beacons.includes(target.id) && <span style={styles.beaconPin} aria-label="Znacznik ustawiony">📍 Znacznik</span>}
-                    <TerraPhoto target={target} />
+                    <div style={styles.photoZoomWrap}>
+                      <TerraPhoto target={target} onZoom={() => openZoom(target)} />
+                      <button
+                        type="button"
+                        style={styles.zoomButton}
+                        onClick={() => openZoom(target)}
+                        aria-label={`Powiększ zdjęcie: ${target.name}`}
+                      >
+                        🔍 Powiększ
+                      </button>
+                    </div>
                     <h3 style={styles.targetTitle}>{target.icon} {target.name}</h3>
                     <p style={styles.route}>{target.route}</p>
                     <p style={styles.luna}>Luna gotowa do narracji terenowej.</p>
@@ -419,6 +451,34 @@ export default function AndromedaBridge({ onClose }) {
           Powrót do kosmosu
         </button>
       </div>
+
+      {zoomedTarget && (
+        <div
+          className="terra-viewer"
+          style={styles.viewerOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Podgląd zdjęcia: ${zoomedTarget.name}`}
+          onClick={closeZoom}
+        >
+          <div style={styles.viewerCard} onClick={(event) => event.stopPropagation()}>
+            <button type="button" style={styles.viewerClose} onClick={closeZoom} aria-label="Zamknij podgląd">
+              ✕
+            </button>
+            <ViewerImage target={zoomedTarget} />
+            <h3 style={styles.viewerTitle}>{zoomedTarget.icon} {zoomedTarget.name}</h3>
+            <p style={styles.viewerCaption}>{TERRA_STORIES[zoomedTarget.id] || zoomedTarget.route}</p>
+            <div style={styles.viewerActions}>
+              <button type="button" style={styles.readButton} onClick={() => readStory(zoomedTarget)}>
+                🔊 Czytaj historię
+              </button>
+              <button type="button" style={styles.stopButton} onClick={closeZoom}>
+                Zamknij
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -467,15 +527,33 @@ function PhotoPlaceholder({ palette, label, visual }) {
   );
 }
 
-function TerraPhoto({ target }) {
+function TerraPhoto({ target, onZoom }) {
   const [imageError, setImageError] = useState(false);
+  const clickable = typeof onZoom === "function";
+  const interactiveProps = clickable
+    ? {
+        role: "button",
+        tabIndex: 0,
+        onClick: onZoom,
+        onKeyDown: (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onZoom();
+          }
+        },
+      }
+    : {};
 
   if (imageError) {
-    return <PhotoPlaceholder palette={target.palette} label={target.name} visual={target.visual} />;
+    return (
+      <div style={clickable ? styles.photoClickable : undefined} {...interactiveProps}>
+        <PhotoPlaceholder palette={target.palette} label={target.name} visual={target.visual} />
+      </div>
+    );
   }
 
   return (
-    <figure style={styles.photoFrame}>
+    <figure style={{ ...styles.photoFrame, ...(clickable ? styles.photoClickable : {}) }} {...interactiveProps}>
       <img
         src={target.image}
         alt={target.name}
@@ -486,6 +564,30 @@ function TerraPhoto({ target }) {
       />
       <figcaption style={styles.photoCaption}>lokalne zdjęcie · {target.name}</figcaption>
     </figure>
+  );
+}
+
+function ViewerImage({ target }) {
+  const [imageError, setImageError] = useState(false);
+
+  if (imageError) {
+    return (
+      <div style={styles.viewerImageWrap}>
+        <PhotoPlaceholder palette={target.palette} label={target.name} visual={target.visual} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.viewerImageWrap}>
+      <img
+        src={target.image}
+        alt={target.name}
+        style={styles.viewerImage}
+        decoding="async"
+        onError={() => setImageError(true)}
+      />
+    </div>
   );
 }
 
@@ -902,6 +1004,99 @@ const styles = {
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
+  },
+  photoZoomWrap: {
+    position: "relative",
+  },
+  photoClickable: {
+    cursor: "zoom-in",
+  },
+  zoomButton: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    border: "1px solid rgba(47, 230, 200, 0.5)",
+    borderRadius: 999,
+    padding: "6px 10px",
+    background: "rgba(6, 10, 24, 0.78)",
+    color: "#CFEDE6",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    lineHeight: 1,
+    backdropFilter: "blur(4px)",
+  },
+  viewerOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 1400,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    boxSizing: "border-box",
+    background: "rgba(1, 4, 12, 0.92)",
+    backdropFilter: "blur(8px)",
+  },
+  viewerCard: {
+    position: "relative",
+    width: "min(720px, calc(100vw - 24px))",
+    maxHeight: "calc(100dvh - 32px)",
+    overflowY: "auto",
+    boxSizing: "border-box",
+    padding: 16,
+    borderRadius: 16,
+    border: "1px solid rgba(47, 230, 200, 0.4)",
+    background: "rgba(4, 8, 20, 0.96)",
+    boxShadow: "0 18px 58px rgba(0, 0, 0, 0.72)",
+  },
+  viewerClose: {
+    position: "absolute",
+    top: 10,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    border: "1px solid rgba(159, 182, 212, 0.32)",
+    background: "rgba(12, 20, 48, 0.82)",
+    color: "#CFEDE6",
+    cursor: "pointer",
+    fontSize: 16,
+    lineHeight: 1,
+    zIndex: 1,
+  },
+  viewerImageWrap: {
+    width: "100%",
+    borderRadius: 14,
+    overflow: "hidden",
+    background: "rgba(12, 20, 48, 0.72)",
+    border: "1px solid rgba(159, 182, 212, 0.18)",
+  },
+  viewerImage: {
+    display: "block",
+    width: "100%",
+    maxHeight: "60vh",
+    objectFit: "contain",
+    background: "#04060D",
+  },
+  viewerTitle: {
+    margin: "14px 0 0",
+    color: "#E6EEF8",
+    fontSize: 20,
+    lineHeight: 1.2,
+    fontWeight: 900,
+  },
+  viewerCaption: {
+    margin: "8px 0 0",
+    color: "#CFEDE6",
+    fontSize: 15,
+    lineHeight: 1.5,
+  },
+  viewerActions: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 14,
   },
   targetTitle: {
     margin: 0,
