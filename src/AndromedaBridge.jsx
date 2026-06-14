@@ -567,13 +567,25 @@ function TerraPhoto({ target, onZoom }) {
   );
 }
 
+function WaterRipple() {
+  return (
+    <div className="terra-ripple-layer" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
 function ViewerImage({ target }) {
   const [imageError, setImageError] = useState(false);
+  const isWater = target.visual === "river" || target.id === "lyna";
 
   if (imageError) {
     return (
       <div style={styles.viewerImageWrap}>
         <PhotoPlaceholder palette={target.palette} label={target.name} visual={target.visual} />
+        {isWater && <WaterRipple />}
       </div>
     );
   }
@@ -587,6 +599,7 @@ function ViewerImage({ target }) {
         decoding="async"
         onError={() => setImageError(true)}
       />
+      {isWater && <WaterRipple />}
     </div>
   );
 }
@@ -595,6 +608,36 @@ const terraResponsiveCss = `
   .terra-overlay {
     isolation: isolate;
     overflow-x: hidden;
+  }
+
+  @keyframes terra-ripple {
+    0% { transform: translate(-50%, -50%) scale(0.18); opacity: 0.55; }
+    70% { opacity: 0.16; }
+    100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+  }
+  .terra-ripple-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    border-radius: 14px;
+  }
+  .terra-ripple-layer span {
+    position: absolute;
+    left: 50%;
+    top: 64%;
+    width: 46%;
+    height: 46%;
+    border-radius: 50%;
+    border: 2px solid rgba(155, 231, 255, 0.7);
+    box-shadow: 0 0 18px rgba(120, 210, 255, 0.5);
+    transform: translate(-50%, -50%) scale(0.18);
+    animation: terra-ripple 3.2s ease-out infinite;
+  }
+  .terra-ripple-layer span:nth-child(2) { animation-delay: 1.05s; }
+  .terra-ripple-layer span:nth-child(3) { animation-delay: 2.1s; }
+  @media (prefers-reduced-motion: reduce) {
+    .terra-ripple-layer span { animation: none; opacity: 0.2; }
   }
 
   .terra-panel:focus,
@@ -1066,6 +1109,7 @@ const styles = {
     zIndex: 1,
   },
   viewerImageWrap: {
+    position: "relative",
     width: "100%",
     borderRadius: 14,
     overflow: "hidden",
