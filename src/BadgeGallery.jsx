@@ -53,6 +53,9 @@ function readProgress() {
   const anomaly = safeBool("spacelab_anomaly_discovered");
   const aurora = safeBool("spacelab_aurora_mission_done");
   const dominik = safeBool("spacelab_dominik_demo_done");
+  const satelliteScan = safeBool("spacelab_satellite_scan_done");
+  const pluto = safeBool("spacelab_pluto_discovered");
+  const sirius = safeBool("spacelab_sirius_discovered");
   const terra = new Set(safeArray("spacelab_discovered_terra", TERRA_SET)).size;
   const beacons = new Set(safeArray("spacelab_terra_beacons", TERRA_SET)).size;
   const cityLayout = loadCityLayout();
@@ -65,6 +68,9 @@ function readProgress() {
     anomaly,
     aurora,
     dominik,
+    satelliteScan,
+    pluto,
+    sirius,
     terra,
     beacons,
     cityTypes,
@@ -82,6 +88,9 @@ function buildBadges(p) {
         { icon: "🛰️", name: "Badacz Planet", unlocked: p.planetsWithProbe >= 3, progress: `Sondy do różnych planet: ${Math.min(p.planetsWithProbe, 3)}/3` },
         { icon: "✨", name: "Badacz Anomalii", unlocked: p.anomaly, progress: p.anomaly ? "Sygnał zapisany" : "Zeskanuj anomalię" },
         { icon: "🌌", name: "Łowca Zorzy", unlocked: p.aurora, progress: p.aurora ? "Pokaz zorzy ukończony" : "Uruchom pokaz pogody kosmicznej" },
+        { icon: "📡", name: "Operator Satelity", unlocked: p.satelliteScan, progress: p.satelliteScan ? "Sygnał z Ziemi zapisany" : "Zeskanuj Ziemię z Copernix-1" },
+        { icon: "🧊", name: "Odkrywca Plutona", unlocked: p.pluto, progress: p.pluto ? "Pluton odkryty" : "Znajdź Pluton za Neptunem" },
+        { icon: "⭐", name: "Tropiciel Gwiazd", unlocked: p.sirius, progress: p.sirius ? "Syriusz odkryty" : "Odkryj gwiazdę Syriusz" },
       ],
     },
     {
