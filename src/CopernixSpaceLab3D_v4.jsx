@@ -145,6 +145,31 @@ function loadProbeMissions() {
   }
 }
 
+/* ---------------- Panel testowy (debug) ---------------- */
+/* Klucze Terra należą do AndromedaBridge — tu tylko je czyścimy/wypełniamy (Terra wymaga odświeżenia). */
+const TERRA_DISCOVERED_KEY = "spacelab_discovered_terra";
+const TERRA_BEACONS_KEY = "spacelab_terra_beacons";
+const SHARED_BADGES_KEY = "spacelab_badges";
+const DEBUG_TERRA_IDS = ["katedra", "lyna", "most"];
+const DEBUG_TERRA_BADGE_IDS = ["str-olsztyna", "kartograf-olsztyna"]; // lustro AndromedaBridge
+const DEBUG_PROBE_DEMO = { earth: 1, mars: 1, jupiter: 1 };
+
+function lsRemove(key) {
+  try { window.localStorage.removeItem(key); } catch { /* localStorage niedostępny */ }
+}
+function lsSet(key, value) {
+  try { window.localStorage.setItem(key, value); } catch { /* localStorage niedostępny */ }
+}
+function lsGetArray(key) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function getPlanetOrbitPosition(planet, t, out) {
   const a = planet.phase + t * planet.speed;
   const x = Math.cos(a) * planet.orbit;
@@ -1902,6 +1927,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const [activeProbe, setActiveProbe] = useState(null); // { targetId, key } | null
   const [lastProbeArrival, setLastProbeArrival] = useState(null);
   const probeKey = useRef(0);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugNote, setDebugNote] = useState("");
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -2209,6 +2236,80 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setActiveProbe(null);
     showToast(`🛰️ Sonda dotarła do: ${BODY_INFO[id]?.name || id}`);
   }, [showToast]);
+
+  /* ---------- Panel testowy: resety i skróty demo ---------- */
+  const TERRA_REFRESH_NOTE = "Odśwież stronę, aby zobaczyć pełny reset Terra";
+
+  const debugResetPlanets = () => {
+    lsRemove(PLANET_DISCOVERY_STORAGE_KEY);
+    setDiscoveredPlanets([]);
+    setDebugNote("Zresetowano planety.");
+  };
+  const debugResetProbes = () => {
+    lsRemove(PROBE_STORAGE_KEY);
+    setProbeMissions({});
+    setActiveProbe(null);
+    setLastProbeArrival(null);
+    setDebugNote("Zresetowano sondy.");
+  };
+  const debugResetAnomaly = () => {
+    lsRemove(ANOMALY_STORAGE_KEY);
+    setAnomalyDiscovered(false);
+    setAnomalyScanState("idle");
+    setDebugNote("Zresetowano anomalię.");
+  };
+  const debugResetTerra = () => {
+    lsRemove(TERRA_DISCOVERED_KEY);
+    setDebugNote(TERRA_REFRESH_NOTE);
+  };
+  const debugResetBeacons = () => {
+    lsRemove(TERRA_BEACONS_KEY);
+    setDebugNote(TERRA_REFRESH_NOTE);
+  };
+  const debugResetBadges = () => {
+    lsRemove(SHARED_BADGES_KEY);
+    setDebugNote(TERRA_REFRESH_NOTE);
+  };
+  const debugResetAll = () => {
+    if (typeof window !== "undefined" && !window.confirm("Na pewno zresetować cały postęp?")) return;
+    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY].forEach(lsRemove);
+    setDiscoveredPlanets([]);
+    setProbeMissions({});
+    setActiveProbe(null);
+    setLastProbeArrival(null);
+    setAnomalyDiscovered(false);
+    setAnomalyScanState("idle");
+    setDebugNote(`Zresetowano wszystko. ${TERRA_REFRESH_NOTE}`);
+  };
+
+  const debugMergeBadges = () => {
+    const merged = Array.from(new Set([...lsGetArray(SHARED_BADGES_KEY), ...DEBUG_TERRA_BADGE_IDS]));
+    lsSet(SHARED_BADGES_KEY, JSON.stringify(merged));
+  };
+  const debugUnlockPlanets = () => {
+    lsSet(PLANET_DISCOVERY_STORAGE_KEY, JSON.stringify(PLANET_DISCOVERY_IDS));
+    setDiscoveredPlanets([...PLANET_DISCOVERY_IDS]);
+    setDebugNote("Odblokowano planety.");
+  };
+  const debugUnlockTerra = () => {
+    lsSet(TERRA_DISCOVERED_KEY, JSON.stringify(DEBUG_TERRA_IDS));
+    lsSet(TERRA_BEACONS_KEY, JSON.stringify(DEBUG_TERRA_IDS));
+    debugMergeBadges();
+    setDebugNote(TERRA_REFRESH_NOTE);
+  };
+  const debugUnlockAll = () => {
+    lsSet(PLANET_DISCOVERY_STORAGE_KEY, JSON.stringify(PLANET_DISCOVERY_IDS));
+    setDiscoveredPlanets([...PLANET_DISCOVERY_IDS]);
+    lsSet(PROBE_STORAGE_KEY, JSON.stringify(DEBUG_PROBE_DEMO));
+    setProbeMissions({ ...DEBUG_PROBE_DEMO });
+    lsSet(ANOMALY_STORAGE_KEY, "true");
+    setAnomalyDiscovered(true);
+    setAnomalyScanState("done");
+    lsSet(TERRA_DISCOVERED_KEY, JSON.stringify(DEBUG_TERRA_IDS));
+    lsSet(TERRA_BEACONS_KEY, JSON.stringify(DEBUG_TERRA_IDS));
+    debugMergeBadges();
+    setDebugNote(`Odblokowano wszystko. ${TERRA_REFRESH_NOTE}`);
+  };
 
   const handleSelect = useCallback((id) => {
     if (phase !== "play") return;
@@ -2608,6 +2709,41 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       <div style={S.microFooter}>
         ℹ️ uproszczona wizualizacja edukacyjna · skala nieprawdziwa · to nie system astronomiczny ani ostrzegawczy · dane: NASA NeoWs · v4
       </div>
+
+      {/* ================= PANEL TESTOWY (DEBUG) ================= */}
+      <button
+        type="button"
+        style={S.debugToggle}
+        onClick={() => { setDebugOpen((o) => !o); setDebugNote(""); }}
+        title="Panel testowy / reset postępu"
+        aria-expanded={debugOpen}
+      >
+        🛠 Debug
+      </button>
+      {debugOpen && (
+        <div style={S.debugPanel} aria-label="Panel testowy SpaceLab">
+          <div style={S.debugTitle}>🛠 Panel testowy SpaceLab</div>
+
+          <div style={S.debugGroupLabel}>Reset</div>
+          <button type="button" style={S.debugBtn} onClick={debugResetPlanets}>Resetuj planety</button>
+          <button type="button" style={S.debugBtn} onClick={debugResetProbes}>Resetuj sondy</button>
+          <button type="button" style={S.debugBtn} onClick={debugResetAnomaly}>Resetuj anomalię</button>
+          <button type="button" style={S.debugBtn} onClick={debugResetTerra}>Resetuj Terra</button>
+          <button type="button" style={S.debugBtn} onClick={debugResetBeacons}>Resetuj znaczniki</button>
+          <button type="button" style={S.debugBtn} onClick={debugResetBadges}>Resetuj odznaki</button>
+          <button type="button" style={{ ...S.debugBtn, ...S.debugBtnDanger }} onClick={debugResetAll}>Resetuj wszystko</button>
+
+          <div style={S.debugGroupLabel}>Skróty demo</div>
+          <button type="button" style={{ ...S.debugBtn, ...S.debugBtnGood }} onClick={debugUnlockPlanets}>Odblokuj planety</button>
+          <button type="button" style={{ ...S.debugBtn, ...S.debugBtnGood }} onClick={debugUnlockTerra}>Odblokuj Terra</button>
+          <button type="button" style={{ ...S.debugBtn, ...S.debugBtnGood }} onClick={debugUnlockAll}>Odblokuj wszystko</button>
+
+          {debugNote && <div style={S.debugNote}>{debugNote}</div>}
+          <div style={S.debugDisclaimer}>
+            Panel testowy działa tylko lokalnie w przeglądarce i czyści localStorage.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2833,5 +2969,44 @@ const S = {
     position: "absolute", bottom: 4, left: 0, right: 0, textAlign: "center",
     fontSize: 9.5, fontFamily: "monospace", color: "rgba(110,137,171,0.65)",
     pointerEvents: "none", zIndex: 5, padding: "0 10px",
+  },
+
+  /* PANEL TESTOWY */
+  debugToggle: {
+    position: "fixed", left: 10, bottom: 12, zIndex: 9998,
+    padding: "6px 10px", borderRadius: 999, cursor: "pointer",
+    border: "1px solid rgba(159,182,212,0.4)", background: "rgba(6,10,24,0.82)",
+    color: "#CFE2FF", fontSize: 12, fontWeight: 900, lineHeight: 1,
+  },
+  debugPanel: {
+    position: "fixed", left: 10, bottom: 50, zIndex: 9999,
+    width: "min(232px, calc(100vw - 20px))", maxHeight: "70vh", overflowY: "auto",
+    display: "grid", gap: 6, padding: 12, borderRadius: 14,
+    background: "rgba(6,10,24,0.94)", backdropFilter: "blur(8px)",
+    border: "1px solid #1E3A5F", boxShadow: "0 8px 30px rgba(0,0,0,0.55)",
+  },
+  debugTitle: { fontSize: 13.5, fontWeight: 900, color: "#E6EEF8", marginBottom: 2 },
+  debugGroupLabel: {
+    fontSize: 10.5, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1,
+    color: "#6E89AB", marginTop: 4,
+  },
+  debugBtn: {
+    width: "100%", padding: "7px 9px", borderRadius: 9, cursor: "pointer",
+    border: "1px solid rgba(159,182,212,0.28)", background: "rgba(12,20,48,0.7)",
+    color: "#CFE2FF", fontSize: 12, fontWeight: 800, textAlign: "left",
+  },
+  debugBtnDanger: {
+    border: "1px solid rgba(255,122,46,0.6)", background: "rgba(255,122,46,0.14)", color: "#FFD3A6",
+  },
+  debugBtnGood: {
+    border: "1px solid rgba(47,230,200,0.5)", background: "rgba(47,230,200,0.12)", color: "#CFEDE6",
+  },
+  debugNote: {
+    fontSize: 11.5, fontWeight: 800, lineHeight: 1.35, color: "#FFE2A6",
+    background: "rgba(255,176,46,0.1)", border: "1px solid rgba(255,176,46,0.3)",
+    borderRadius: 9, padding: "6px 8px", marginTop: 4,
+  },
+  debugDisclaimer: {
+    fontSize: 10, lineHeight: 1.35, color: "#8AA0C0", marginTop: 4,
   },
 };
