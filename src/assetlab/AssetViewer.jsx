@@ -1,13 +1,23 @@
-import { useMemo, useState } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls, useGLTF } from "@react-three/drei";
 import { ASSET_LAB_ITEMS } from "./assetManifest";
 
 export default function AssetViewer({ onClose }) {
   const [selectedId, setSelectedId] = useState(ASSET_LAB_ITEMS[0]?.id || "");
+  const [previewState, setPreviewState] = useState("empty");
+  const [previewError, setPreviewError] = useState("");
   const selectedAsset = useMemo(
     () => ASSET_LAB_ITEMS.find((item) => item.id === selectedId) || ASSET_LAB_ITEMS[0],
     [selectedId]
   );
   const hasModelFile = !!selectedAsset?.file;
+  const modelUrl = useMemo(() => normalizeModelFile(selectedAsset?.file), [selectedAsset?.file]);
+
+  useEffect(() => {
+    setPreviewError("");
+    setPreviewState(modelUrl ? "loading" : "empty");
+  }, [modelUrl]);
 
   return (
     <section style={styles.overlay} aria-label="Asset LAB">
@@ -47,8 +57,31 @@ export default function AssetViewer({ onClose }) {
           <article style={styles.details}>
             <div style={styles.previewBox}>
               {hasModelFile ? (
-                <div style={styles.previewPlaceholder}>
-                  Podgląd GLB będzie włączony w kolejnym kroku pipeline.
+                <div style={styles.canvasShell}>
+                  <Canvas camera={{ position: [0, 1.2, 4.2], fov: 42 }} dpr={[1, 1.4]} gl={{ antialias: true, alpha: true }}>
+                    <ambientLight intensity={1.6} />
+                    <directionalLight position={[3, 4, 5]} intensity={2.2} />
+                    <directionalLight position={[-3, 1, -2]} intensity={0.6} color="#5FC6FF" />
+                    <Suspense fallback={<PreviewLoadingMesh />}>
+                      <ModelErrorBoundary
+                        resetKey={modelUrl}
+                        onError={(error) => {
+                          setPreviewState("error");
+                          setPreviewError(error?.message || "Nie udało się załadować modelu GLB.");
+                        }}
+                      >
+                        <GlbModel file={modelUrl} onReady={() => setPreviewState("ready")} />
+                      </ModelErrorBoundary>
+                    </Suspense>
+                    <OrbitControls enablePan={false} enableDamping dampingFactor={0.08} minDistance={1.8} maxDistance={8} />
+                  </Canvas>
+                  {previewState === "loading" && <div style={styles.previewStatus}>Ładowanie modelu GLB...</div>}
+                  {previewState === "ready" && <div style={styles.previewStatus}>Podgląd GLB aktywny</div>}
+                  {previewState === "error" && (
+                    <div style={{ ...styles.previewStatus, ...styles.previewError }}>
+                      Nie udało się załadować GLB. {previewError}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div style={styles.emptyModel}>
@@ -81,6 +114,78 @@ export default function AssetViewer({ onClose }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function normalizeModelFile(file) {
+  if (!file) return "";
+  return file.startsWith("/") ? file : `/assets3d/lab/${file}`;
+}
+
+class ModelErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    this.props.onError?.(error);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) return <PreviewErrorMesh />;
+    return this.props.children;
+  }
+}
+
+function GlbModel({ file, onReady }) {
+  const group = useRef();
+  const gltf = useGLTF(file);
+
+  useEffect(() => {
+    onReady?.();
+  }, [onReady]);
+
+  useFrame((_, delta) => {
+    if (group.current) group.current.rotation.y += delta * 0.28;
+  });
+
+  return (
+    <group ref={group} position={[0, -0.55, 0]} scale={1.35}>
+      <primitive object={gltf.scene} />
+    </group>
+  );
+}
+
+function PreviewLoadingMesh() {
+  useFrame((_, delta) => {
+    // Suspense fallback stays intentionally light.
+  });
+
+  return (
+    <mesh>
+      <torusGeometry args={[0.75, 0.025, 8, 64]} />
+      <meshBasicMaterial color="#2FE6C8" transparent opacity={0.55} />
+    </mesh>
+  );
+}
+
+function PreviewErrorMesh() {
+  return (
+    <mesh>
+      <boxGeometry args={[1.1, 1.1, 1.1]} />
+      <meshBasicMaterial color="#FF7A2E" wireframe transparent opacity={0.55} />
+    </mesh>
   );
 }
 
@@ -150,7 +255,7 @@ const styles = {
   },
   content: {
     display: "grid",
-    gridTemplateColumns: "minmax(180px, 240px) minmax(0, 1fr)",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))",
     gap: 14,
     marginTop: 18,
   },
@@ -197,6 +302,32 @@ const styles = {
     border: "1px dashed rgba(159, 182, 212, 0.28)",
     borderRadius: 14,
     background: "linear-gradient(135deg, rgba(12, 20, 48, 0.74), rgba(6, 10, 24, 0.74))",
+    overflow: "hidden",
+  },
+  canvasShell: {
+    position: "relative",
+    width: "100%",
+    minHeight: 250,
+    height: "min(42vh, 340px)",
+  },
+  previewStatus: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 12,
+    border: "1px solid rgba(47, 230, 200, 0.3)",
+    borderRadius: 999,
+    padding: "7px 10px",
+    background: "rgba(6, 10, 24, 0.78)",
+    color: "#CFEDE6",
+    fontSize: 12,
+    fontWeight: 900,
+    textAlign: "center",
+    lineHeight: 1.25,
+  },
+  previewError: {
+    border: "1px solid rgba(255, 122, 46, 0.45)",
+    color: "#FFE2A6",
   },
   previewPlaceholder: {
     maxWidth: 320,
