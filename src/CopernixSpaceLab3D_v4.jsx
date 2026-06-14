@@ -3,6 +3,9 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Stars, Html } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
+import CityBuilderLite, {
+  CITY_LAYOUT_KEY, CITY_BADGE_ID, CITY_SAMPLE_LAYOUT, loadCityLayout, cityHasAllTypes,
+} from "./CityBuilderLite";
 
 /* ============================================================
    COPERNIX SPACE LAB 3D — v4 "ŻYWY KOSMOS"
@@ -2167,6 +2170,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const [dominikDemoDone, setDominikDemoDone] = useState(() => {
     try { return window.localStorage.getItem(DOMINIK_DEMO_KEY) === "true"; } catch { return false; }
   });
+  const [cityOpen, setCityOpen] = useState(false);
+  const [cityArchitectUnlocked, setCityArchitectUnlocked] = useState(() => {
+    try { return cityHasAllTypes(loadCityLayout()) || lsGetArray(SHARED_BADGES_KEY).includes(CITY_BADGE_ID); } catch { return false; }
+  });
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -2590,9 +2597,16 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     lsRemove(SHARED_BADGES_KEY);
     setDebugNote(TERRA_REFRESH_NOTE);
   };
+  const debugResetCity = () => {
+    lsRemove(CITY_LAYOUT_KEY);
+    const filtered = lsGetArray(SHARED_BADGES_KEY).filter((b) => b !== CITY_BADGE_ID);
+    lsSet(SHARED_BADGES_KEY, JSON.stringify(filtered));
+    setCityArchitectUnlocked(false);
+    setDebugNote("Zresetowano City Builder.");
+  };
   const debugResetAll = () => {
     if (typeof window !== "undefined" && !window.confirm("Na pewno zresetować cały postęp?")) return;
-    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, AURORA_STORAGE_KEY, DOMINIK_DEMO_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY].forEach(lsRemove);
+    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, AURORA_STORAGE_KEY, DOMINIK_DEMO_KEY, CITY_LAYOUT_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY].forEach(lsRemove);
     setDiscoveredPlanets([]);
     setProbeMissions({});
     setActiveProbe(null);
@@ -2604,11 +2618,12 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setAuroraMissionDone(false);
     setGuideActive(false);
     setDominikDemoDone(false);
+    setCityArchitectUnlocked(false);
     setDebugNote(`Zresetowano wszystko. ${TERRA_REFRESH_NOTE}`);
   };
 
   const debugMergeBadges = () => {
-    const merged = Array.from(new Set([...lsGetArray(SHARED_BADGES_KEY), ...DEBUG_TERRA_BADGE_IDS]));
+    const merged = Array.from(new Set([...lsGetArray(SHARED_BADGES_KEY), ...DEBUG_TERRA_BADGE_IDS, CITY_BADGE_ID]));
     lsSet(SHARED_BADGES_KEY, JSON.stringify(merged));
   };
   const debugUnlockPlanets = () => {
@@ -2634,6 +2649,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     setAuroraMissionDone(true);
     lsSet(DOMINIK_DEMO_KEY, "true");
     setDominikDemoDone(true);
+    lsSet(CITY_LAYOUT_KEY, JSON.stringify(CITY_SAMPLE_LAYOUT));
+    setCityArchitectUnlocked(true);
     lsSet(TERRA_DISCOVERED_KEY, JSON.stringify(DEBUG_TERRA_IDS));
     lsSet(TERRA_BEACONS_KEY, JSON.stringify(DEBUG_TERRA_IDS));
     debugMergeBadges();
@@ -2715,7 +2732,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     auroraStep === "solarWind" ? "Wiatr słoneczny"
       : auroraStep === "magnetosphere" ? "Pole magnetyczne Ziemi"
         : auroraStep === "aurora" ? "Zorza polarna" : "";
-  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || descentOpen || badgesOpen || detectFlash;
+  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || cityOpen || descentOpen || badgesOpen || detectFlash;
   const showSceneLabels = phase === "play" && !majorOverlayOpen;
   /* subtelny dryf kamery tylko w spoczynku: brak zaznaczonej planety, brak Terra/overlay, brak modala */
   const idleDrift = phase === "play" && cameraMode === "free" && !selectedId && !majorOverlayOpen;
@@ -2911,6 +2928,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                 <span style={{ fontSize: 18 }}>{dominikDemoDone ? "🚀" : "🔒"}</span>
                 <span>{dominikDemoDone ? "Odkrywca Misji Dominika" : "Odkrywca Misji Dominika — ukończ prowadzoną misję"}</span>
               </div>
+              <div style={{ ...S.panelBadge, ...(cityArchitectUnlocked ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{cityArchitectUnlocked ? "🏗️" : "🔒"}</span>
+                <span>{cityArchitectUnlocked ? "Architekt Copernix" : "Architekt Copernix — zbuduj miasto z 7 typów elementów"}</span>
+              </div>
               <input style={S.pilotInput} value={pilot} maxLength={14} onChange={(e) => setPilot(e.target.value)} aria-label="Imię pilota" />
             </div>
           )}
@@ -2944,6 +2965,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
               style={{ ...S.dockTextBtn, ...(auroraPanelOpen ? S.dockBtnActive : {}) }}
             >
               🌌 Pogoda kosmiczna
+            </button>
+            <button
+              onClick={() => setCityOpen((o) => !o)}
+              title="Zbuduj swoje miasto misji"
+              className="cx-dock-text-btn"
+              style={{ ...S.dockTextBtn, ...(cityOpen ? S.dockBtnActive : {}) }}
+            >
+              🏗️ City Builder
             </button>
             <span className="cx-dock-divider" style={S.dockDivider} />
             <button
@@ -3123,6 +3152,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
         </div>
       )}
 
+      {/* ================= CITY BUILDER LITE ================= */}
+      {cityOpen && (
+        <CityBuilderLite
+          onClose={() => setCityOpen(false)}
+          onArchitectUnlocked={() => setCityArchitectUnlocked(true)}
+        />
+      )}
+
       {/* ================= PANEL TESTOWY (DEBUG) ================= */}
       <button
         type="button"
@@ -3144,6 +3181,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           <button type="button" style={S.debugBtn} onClick={debugResetTerra}>Resetuj Terra</button>
           <button type="button" style={S.debugBtn} onClick={debugResetBeacons}>Resetuj znaczniki</button>
           <button type="button" style={S.debugBtn} onClick={debugResetBadges}>Resetuj odznaki</button>
+          <button type="button" style={S.debugBtn} onClick={debugResetCity}>Resetuj City Builder</button>
           <button type="button" style={{ ...S.debugBtn, ...S.debugBtnDanger }} onClick={debugResetAll}>Resetuj wszystko</button>
 
           <div style={S.debugGroupLabel}>Skróty demo</div>
