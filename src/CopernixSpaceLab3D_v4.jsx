@@ -440,24 +440,49 @@ function SpaceDust({ reveal }) {
   );
 }
 
+/* Lekka detekcja mobile — tylko do skalowania liczby gwiazd / efektów (raz na załadowanie). */
+const IS_MOBILE =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(max-width: 768px)").matches;
+
+/** Wielowarstwowe pole gwiazd — głębia + delikatna wariacja rozmiaru i koloru. */
+function Starfield() {
+  const farCount = IS_MOBILE ? 2200 : 3600;
+  const midCount = IS_MOBILE ? 1400 : 2200;
+  const nearCount = IS_MOBILE ? 260 : 480;
+  return (
+    <>
+      {/* daleka mgła gwiezdna — drobna, chłodna, prawie statyczna */}
+      <Stars radius={260} depth={90} count={farCount} factor={3} saturation={0} fade speed={0.3} />
+      {/* warstwa środkowa — większe gwiazdy z odrobiną koloru */}
+      <Stars radius={150} depth={55} count={midCount} factor={5} saturation={0.12} fade speed={0.5} />
+      {/* bliskie, rzadkie, jasne punkty — dają poczucie ruchu */}
+      <Stars radius={95} depth={35} count={nearCount} factor={7} saturation={0.22} fade speed={0.7} />
+    </>
+  );
+}
+
 function OrbitRing({ radius, inclination = 0, color = "#1E3A5F", opacity = 0.5, reveal }) {
   const matRef = useRef();
   const geom = useMemo(() => {
     const pts = [];
-    const N = 128;
+    const N = 160;
     for (let i = 0; i <= N; i++) {
       const a = (i / N) * Math.PI * 2;
       pts.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
     }
     return new THREE.BufferGeometry().setFromPoints(pts);
   }, [radius]);
+  /* na mobile cieńsze/spokojniejsze orbity (linewidth jest ignorowany w WebGL → sterujemy kryciem) */
+  const baseOpacity = IS_MOBILE ? opacity * 0.7 : opacity;
   useFrame(() => {
-    if (matRef.current && reveal) matRef.current.opacity = opacity * reveal.current.v;
+    if (matRef.current && reveal) matRef.current.opacity = baseOpacity * reveal.current.v;
   });
   return (
     <group rotation={[inclination, 0, 0]}>
       <line geometry={geom}>
-        <lineBasicMaterial ref={matRef} color={color} transparent opacity={reveal ? 0 : opacity} />
+        <lineBasicMaterial ref={matRef} color={color} transparent opacity={reveal ? 0 : baseOpacity} />
       </line>
     </group>
   );
@@ -465,8 +490,24 @@ function OrbitRing({ radius, inclination = 0, color = "#1E3A5F", opacity = 0.5, 
 
 function Sun({ onSelect, selected, showLabels }) {
   const coronaTex = useMemo(() => makeRadialGlow("rgba(255,210,90,0.9)", "rgba(255,120,20,0.25)"), []);
+  const haloTex = useMemo(() => makeRadialGlow("rgba(255,180,70,0.5)", "rgba(255,90,20,0)"), []);
   const ref = useRef();
-  useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * 0.04; });
+  const corona = useRef();
+  const halo = useRef();
+  const haloScale = SUN_R * (IS_MOBILE ? 10 : 13);
+  useFrame((state, dt) => {
+    if (ref.current) ref.current.rotation.y += dt * 0.04;
+    const t = state.clock.elapsedTime;
+    /* delikatne „oddychanie” korony i halo — żywa gwiazda, ale bez prześwietlenia */
+    if (corona.current) {
+      const s = SUN_R * 7 * (1 + 0.04 * Math.sin(t * 0.8));
+      corona.current.scale.set(s, s, 1);
+    }
+    if (halo.current) {
+      const s = haloScale * (1 + 0.05 * Math.sin(t * 0.5 + 1));
+      halo.current.scale.set(s, s, 1);
+    }
+  });
   return (
     <group>
       <pointLight intensity={2.6} distance={200} decay={0.35} color="#FFF3D6" />
@@ -474,8 +515,12 @@ function Sun({ onSelect, selected, showLabels }) {
         <sphereGeometry args={[SUN_R, 48, 48]} />
         <meshBasicMaterial color="#FFF6CF" toneMapped={false} />
       </mesh>
-      <sprite scale={[SUN_R * 7, SUN_R * 7, 1]} raycast={() => null}>
-        <spriteMaterial map={coronaTex} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
+      {/* szerokie, miękkie halo — głębia świecenia, niskie krycie by nie zakrywać planet */}
+      <sprite ref={halo} scale={[haloScale, haloScale, 1]} raycast={() => null}>
+        <spriteMaterial map={haloTex} transparent opacity={IS_MOBILE ? 0.26 : 0.4} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+      <sprite ref={corona} scale={[SUN_R * 7, SUN_R * 7, 1]} raycast={() => null}>
+        <spriteMaterial map={coronaTex} transparent opacity={IS_MOBILE ? 0.78 : 0.9} depthWrite={false} blending={THREE.AdditiveBlending} />
       </sprite>
       {showLabels && (
         <Html position={[0, SUN_R + 1.6, 0]} center distanceFactor={40} style={labelStyle(selected === "sun")}>☀️ Słońce</Html>
@@ -507,15 +552,32 @@ function SolarPlanets({ clock, onSelect, selected, phase, reveal, planetPosition
 function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal, planetPositions, showLabels }) {
   const group = useRef();
   const mesh = useRef();
+  const matRef = useRef();
+  const glowRef = useRef();
   const pos = useMemo(() => new THREE.Vector3(), []);
+  const selectionGlowTex = useMemo(() => makeRadialGlow("rgba(120,255,235,0.55)", "rgba(47,230,200,0)", 128), []);
   const selectedPlanet = selected === planet.id;
 
-  useFrame((_, dt) => {
+  useFrame((state, dt) => {
     getPlanetOrbitPosition(planet, clock.current.t, pos);
 
     if (group.current) group.current.position.copy(pos);
     if (planetPositions?.current?.[planet.id]) planetPositions.current[planet.id].copy(pos);
     if (mesh.current) mesh.current.rotation.y += dt * planet.spin;
+
+    /* subtelny puls zaznaczonej planety — emisja + miękka poświata, bez zasłaniania kuli */
+    const t = state.clock.elapsedTime;
+    const k = Math.min(1, dt * 6);
+    if (matRef.current) {
+      const target = selectedPlanet ? 0.16 + 0.12 * (0.5 + 0.5 * Math.sin(t * 2.4)) : 0.04;
+      matRef.current.emissiveIntensity += (target - matRef.current.emissiveIntensity) * k;
+    }
+    if (glowRef.current) {
+      const targetOpacity = selectedPlanet ? 0.22 + 0.12 * (0.5 + 0.5 * Math.sin(t * 2.4)) : 0;
+      glowRef.current.material.opacity += (targetOpacity - glowRef.current.material.opacity) * k;
+      const gs = planet.radius * (selectedPlanet ? 4 + 0.3 * Math.sin(t * 2.4) : 3.2);
+      glowRef.current.scale.set(gs, gs, 1);
+    }
   });
 
   return (
@@ -524,13 +586,17 @@ function SolarPlanet({ planet, clock, onSelect, selected, phase, reveal, planetP
         radius={planet.orbit}
         inclination={planet.inclination}
         color={selectedPlanet ? "#2FE6C8" : "#243A62"}
-        opacity={selectedPlanet ? 0.85 : 0.34}
+        opacity={selectedPlanet ? 0.9 : 0.34}
         reveal={reveal}
       />
       <group ref={group}>
+        <sprite ref={glowRef} raycast={() => null} scale={[planet.radius * 3.2, planet.radius * 3.2, 1]}>
+          <spriteMaterial map={selectionGlowTex} transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+        </sprite>
         <mesh ref={mesh} onClick={(e) => { e.stopPropagation(); onSelect(planet.id); }}>
           <sphereGeometry args={[planet.radius, 40, 40]} />
           <meshStandardMaterial
+            ref={matRef}
             color={planet.color}
             roughness={0.82}
             metalness={0.04}
@@ -1995,6 +2061,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const allDone = completed.length >= MISSIONS.length;
   const majorOverlayOpen = hideSceneLabels || !!selectedInfo || descentOpen || badgesOpen || detectFlash;
   const showSceneLabels = phase === "play" && !majorOverlayOpen;
+  /* subtelny dryf kamery tylko w spoczynku: brak zaznaczonej planety, brak Terra/overlay, brak modala */
+  const idleDrift = phase === "play" && cameraMode === "free" && !selectedId && !majorOverlayOpen;
 
   return (
     <div style={S.app} translate="no" onContextMenu={(e) => e.preventDefault()}>
@@ -2007,7 +2075,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       >
         <color attach="background" args={["#03050C"]} />
         <ambientLight intensity={0.16} />
-        <Stars radius={180} depth={60} count={6000} factor={4} saturation={0} fade speed={0.5} />
+        <Starfield />
         <MilkyWay />
         <Nebulae />
         <SpaceDust reveal={reveal} />
@@ -2070,6 +2138,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           maxDistance={70}
           dampingFactor={0.08}
           enableDamping
+          autoRotate={idleDrift}
+          autoRotateSpeed={0.18}
         />
 
         <EffectComposer>
