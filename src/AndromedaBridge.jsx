@@ -7,6 +7,10 @@ const missionTargets = terraRecipe.pointsOfInterest;
 const OLSZTYN_WEATHER_URL = terraRecipe.weather.url;
 const DISCOVERED_STORAGE_KEY = "spacelab_discovered_terra";
 const TERRA_AUDIO_STORAGE_KEY = "spacelab_luna_audio_enabled";
+const BADGES_STORAGE_KEY = "spacelab_badges";
+const OLSZTYN_GUARDIAN_BADGE = "str-olsztyna";
+const TERRA_MISSION_IDS = missionTargets.map((target) => target.id);
+const TERRA_MISSION_TOTAL = TERRA_MISSION_IDS.length;
 
 function readStoredStringArray(key) {
   if (typeof window === "undefined") return [];
@@ -77,6 +81,8 @@ export default function AndromedaBridge({ onClose }) {
   const [weatherLabel, setWeatherLabel] = useState(terraRecipe.weather.fallback);
   const [discoveredIds, setDiscoveredIds] = useState(() => readStoredStringArray(DISCOVERED_STORAGE_KEY));
   const [audioEnabled, setAudioEnabled] = useState(() => readStoredBoolean(TERRA_AUDIO_STORAGE_KEY));
+  const [badges, setBadges] = useState(() => readStoredStringArray(BADGES_STORAGE_KEY));
+  const [badgesPanelOpen, setBadgesPanelOpen] = useState(false);
   const mountedRef = useRef(false);
   const landingTimerRef = useRef(null);
   const narrationPanelRef = useRef(null);
@@ -120,6 +126,19 @@ export default function AndromedaBridge({ onClose }) {
   useEffect(() => {
     writeStorage(TERRA_AUDIO_STORAGE_KEY, audioEnabled);
   }, [audioEnabled]);
+
+  useEffect(() => {
+    writeStorage(BADGES_STORAGE_KEY, badges);
+  }, [badges]);
+
+  const terraMissionDone = TERRA_MISSION_IDS.filter((id) => discoveredIds.includes(id)).length;
+  const terraMissionComplete = terraMissionDone >= TERRA_MISSION_TOTAL;
+  const guardianUnlocked = badges.includes(OLSZTYN_GUARDIAN_BADGE);
+
+  useEffect(() => {
+    if (!terraMissionComplete) return;
+    setBadges((current) => (current.includes(OLSZTYN_GUARDIAN_BADGE) ? current : [...current, OLSZTYN_GUARDIAN_BADGE]));
+  }, [terraMissionComplete]);
 
   useEffect(() => {
     let alive = true;
@@ -254,9 +273,43 @@ export default function AndromedaBridge({ onClose }) {
               </div>
               <div style={styles.hubBadges}>
                 <span style={styles.hubBadge}>Luna online</span>
+                <span
+                  style={{ ...styles.progressBadge, ...(terraMissionComplete ? styles.progressBadgeDone : {}) }}
+                  aria-label={`Postęp misji Olsztyn: ${terraMissionDone} z ${TERRA_MISSION_TOTAL}`}
+                >
+                  Misja Olsztyn: {terraMissionDone}/{TERRA_MISSION_TOTAL}
+                </span>
                 <span style={styles.weatherBadge}>{weatherLabel}</span>
+                <button
+                  type="button"
+                  onClick={() => setBadgesPanelOpen((open) => !open)}
+                  style={styles.showBadgesButton}
+                  aria-expanded={badgesPanelOpen}
+                >
+                  🏅 Pokaż odznaki
+                </button>
               </div>
             </div>
+
+            {badgesPanelOpen && (
+              <div style={styles.badgesPanel} aria-label="Panel odznak">
+                <div style={{ ...styles.badgeRow, ...(guardianUnlocked ? styles.badgeRowDone : {}) }}>
+                  <span style={{ fontSize: 20 }}>{guardianUnlocked ? "🏠" : "🔒"}</span>
+                  <span>
+                    {guardianUnlocked
+                      ? "Strażnik Olsztyna"
+                      : `Strażnik Olsztyna — odkryj ${terraMissionDone}/${TERRA_MISSION_TOTAL} punktów`}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {terraMissionComplete && (
+              <div style={styles.completionPanel} role="status" aria-label="Misja Olsztyn ukończona">
+                <p style={styles.completionTitle}>🎉 Misja ukończona!</p>
+                <p style={styles.completionBadge}>🏠 Odznaka: Strażnik Olsztyna</p>
+              </div>
+            )}
 
             <div className="terra-targets" style={styles.targets} aria-label="Punkty docelowe Olsztyna">
               {missionTargets.map((target) => {
@@ -664,6 +717,82 @@ const styles = {
     fontFamily: "ui-monospace, Consolas, monospace",
     fontSize: 12,
     fontWeight: 800,
+  },
+  progressBadge: {
+    border: "1px solid rgba(255, 176, 46, 0.42)",
+    borderRadius: 999,
+    padding: "7px 10px",
+    background: "rgba(255, 176, 46, 0.12)",
+    color: "#FFE2A6",
+    fontFamily: "ui-monospace, Consolas, monospace",
+    fontSize: 12,
+    fontWeight: 900,
+  },
+  progressBadgeDone: {
+    border: "1px solid rgba(94, 230, 160, 0.6)",
+    background: "linear-gradient(135deg, rgba(94, 230, 160, 0.9), rgba(47, 230, 200, 0.9))",
+    color: "#04121C",
+    boxShadow: "0 0 14px rgba(94, 230, 160, 0.28)",
+  },
+  showBadgesButton: {
+    border: "1px solid rgba(159, 182, 212, 0.3)",
+    borderRadius: 999,
+    padding: "7px 12px",
+    background: "rgba(12, 20, 48, 0.78)",
+    color: "#E6EEF8",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
+  badgesPanel: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 14,
+    border: "1px solid rgba(159, 182, 212, 0.22)",
+    background: "rgba(6, 10, 24, 0.6)",
+    display: "grid",
+    gap: 8,
+  },
+  badgeRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "1px solid rgba(159, 182, 212, 0.24)",
+    background: "rgba(12, 20, 48, 0.6)",
+    color: "#9FB6D4",
+    fontSize: 13.5,
+    fontWeight: 900,
+    opacity: 0.7,
+  },
+  badgeRowDone: {
+    border: "1px solid rgba(94, 230, 160, 0.5)",
+    background: "rgba(94, 230, 160, 0.12)",
+    color: "#CFEDE6",
+    opacity: 1,
+  },
+  completionPanel: {
+    marginTop: 14,
+    padding: 16,
+    borderRadius: 14,
+    textAlign: "center",
+    border: "1px solid rgba(255, 176, 46, 0.5)",
+    background: "linear-gradient(135deg, rgba(255, 176, 46, 0.16), rgba(94, 230, 160, 0.14))",
+    boxShadow: "0 0 20px rgba(255, 176, 46, 0.18)",
+  },
+  completionTitle: {
+    margin: 0,
+    color: "#FFE2A6",
+    fontSize: 18,
+    fontWeight: 900,
+  },
+  completionBadge: {
+    margin: "8px 0 0",
+    color: "#CFEDE6",
+    fontSize: 15,
+    fontWeight: 900,
   },
   targets: {
     display: "flex",
