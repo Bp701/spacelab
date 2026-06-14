@@ -8,9 +8,12 @@ const OLSZTYN_WEATHER_URL = terraRecipe.weather.url;
 const DISCOVERED_STORAGE_KEY = "spacelab_discovered_terra";
 const TERRA_AUDIO_STORAGE_KEY = "spacelab_luna_audio_enabled";
 const BADGES_STORAGE_KEY = "spacelab_badges";
+const TERRA_BEACONS_STORAGE_KEY = "spacelab_terra_beacons";
 const OLSZTYN_GUARDIAN_BADGE = "str-olsztyna";
+const OLSZTYN_CARTOGRAPHER_BADGE = "kartograf-olsztyna";
 const TERRA_MISSION_IDS = missionTargets.map((target) => target.id);
 const TERRA_MISSION_TOTAL = TERRA_MISSION_IDS.length;
+const TERRA_MISSION_ID_SET = new Set(TERRA_MISSION_IDS);
 
 function readStoredStringArray(key) {
   if (typeof window === "undefined") return [];
@@ -83,6 +86,9 @@ export default function AndromedaBridge({ onClose }) {
   const [audioEnabled, setAudioEnabled] = useState(() => readStoredBoolean(TERRA_AUDIO_STORAGE_KEY));
   const [badges, setBadges] = useState(() => readStoredStringArray(BADGES_STORAGE_KEY));
   const [badgesPanelOpen, setBadgesPanelOpen] = useState(false);
+  const [beacons, setBeacons] = useState(() =>
+    readStoredStringArray(TERRA_BEACONS_STORAGE_KEY).filter((id) => TERRA_MISSION_ID_SET.has(id))
+  );
   const mountedRef = useRef(false);
   const landingTimerRef = useRef(null);
   const narrationPanelRef = useRef(null);
@@ -131,14 +137,26 @@ export default function AndromedaBridge({ onClose }) {
     writeStorage(BADGES_STORAGE_KEY, badges);
   }, [badges]);
 
+  useEffect(() => {
+    writeStorage(TERRA_BEACONS_STORAGE_KEY, beacons);
+  }, [beacons]);
+
   const terraMissionDone = TERRA_MISSION_IDS.filter((id) => discoveredIds.includes(id)).length;
   const terraMissionComplete = terraMissionDone >= TERRA_MISSION_TOTAL;
   const guardianUnlocked = badges.includes(OLSZTYN_GUARDIAN_BADGE);
+  const beaconCount = beacons.length;
+  const allBeaconsPlaced = beaconCount >= TERRA_MISSION_TOTAL;
+  const cartographerUnlocked = badges.includes(OLSZTYN_CARTOGRAPHER_BADGE);
 
   useEffect(() => {
     if (!terraMissionComplete) return;
     setBadges((current) => (current.includes(OLSZTYN_GUARDIAN_BADGE) ? current : [...current, OLSZTYN_GUARDIAN_BADGE]));
   }, [terraMissionComplete]);
+
+  useEffect(() => {
+    if (!allBeaconsPlaced) return;
+    setBadges((current) => (current.includes(OLSZTYN_CARTOGRAPHER_BADGE) ? current : [...current, OLSZTYN_CARTOGRAPHER_BADGE]));
+  }, [allBeaconsPlaced]);
 
   useEffect(() => {
     let alive = true;
@@ -187,6 +205,11 @@ export default function AndromedaBridge({ onClose }) {
     setDiscoveredIds((ids) => (ids.includes(targetId) ? ids : [...ids, targetId]));
   };
 
+  const placeBeacon = (targetId) => {
+    if (!TERRA_MISSION_ID_SET.has(targetId)) return;
+    setBeacons((ids) => (ids.includes(targetId) ? ids : [...ids, targetId]));
+  };
+
   const readMission = (mission) => {
     setAudioEnabled(true);
     speakLuna(mission.narration);
@@ -206,6 +229,7 @@ export default function AndromedaBridge({ onClose }) {
 
   const landingComplete = activeStep === landingSequence.length - 1;
   const selectedMissionDiscovered = selectedMission ? discoveredIds.includes(selectedMission.id) : false;
+  const selectedMissionBeacon = selectedMission ? beacons.includes(selectedMission.id) : false;
 
   return (
     <section className="terra-overlay" style={styles.overlay} aria-label="AndromedaBridge Terra Mode">
@@ -279,6 +303,12 @@ export default function AndromedaBridge({ onClose }) {
                 >
                   Misja Olsztyn: {terraMissionDone}/{TERRA_MISSION_TOTAL}
                 </span>
+                <span
+                  style={{ ...styles.progressBadge, ...(allBeaconsPlaced ? styles.progressBadgeDone : {}) }}
+                  aria-label={`Znaczniki misji: ${beaconCount} z ${TERRA_MISSION_TOTAL}`}
+                >
+                  Znaczniki: {beaconCount}/{TERRA_MISSION_TOTAL}
+                </span>
                 <span style={styles.weatherBadge}>{weatherLabel}</span>
                 <button
                   type="button"
@@ -299,6 +329,14 @@ export default function AndromedaBridge({ onClose }) {
                     {guardianUnlocked
                       ? "Strażnik Olsztyna"
                       : `Strażnik Olsztyna — odkryj ${terraMissionDone}/${TERRA_MISSION_TOTAL} punktów`}
+                  </span>
+                </div>
+                <div style={{ ...styles.badgeRow, ...(cartographerUnlocked ? styles.badgeRowDone : {}) }}>
+                  <span style={{ fontSize: 20 }}>{cartographerUnlocked ? "📍" : "🔒"}</span>
+                  <span>
+                    {cartographerUnlocked
+                      ? "Kartograf Olsztyna"
+                      : `Kartograf Olsztyna — ustaw ${beaconCount}/${TERRA_MISSION_TOTAL} znaczników`}
                   </span>
                 </div>
               </div>
@@ -325,6 +363,7 @@ export default function AndromedaBridge({ onClose }) {
                     }}
                   >
                     {isDiscovered && <span style={styles.discoveredBadge}>✅ Odkryte</span>}
+                    {beacons.includes(target.id) && <span style={styles.beaconPin} aria-label="Znacznik ustawiony">📍 Znacznik</span>}
                     <TerraPhoto target={target} />
                     <h3 style={styles.targetTitle}>{target.icon} {target.name}</h3>
                     <p style={styles.route}>{target.route}</p>
@@ -360,6 +399,14 @@ export default function AndromedaBridge({ onClose }) {
                   </button>
                   <button type="button" onClick={stopLuna} style={styles.stopButton}>
                     ⏹ Stop
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => placeBeacon(selectedMission.id)}
+                    disabled={selectedMissionBeacon}
+                    style={{ ...styles.beaconButton, ...(selectedMissionBeacon ? styles.beaconButtonActive : {}) }}
+                  >
+                    {selectedMissionBeacon ? "📍 Znacznik ustawiony" : "📍 Postaw znacznik misji"}
                   </button>
                 </div>
                 <p style={styles.narrationText}>Luna: “{selectedMission.narration}”</p>
@@ -891,6 +938,21 @@ const styles = {
     fontWeight: 900,
     lineHeight: 1,
   },
+  beaconPin: {
+    display: "inline-flex",
+    alignItems: "center",
+    width: "fit-content",
+    marginBottom: 10,
+    marginLeft: 8,
+    border: "1px solid rgba(255, 176, 46, 0.5)",
+    borderRadius: 999,
+    padding: "6px 10px",
+    background: "rgba(255, 176, 46, 0.14)",
+    color: "#FFE2A6",
+    fontSize: 12,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
   discoverButton: {
     marginTop: 14,
     border: "none",
@@ -960,6 +1022,23 @@ const styles = {
     background: "linear-gradient(135deg, rgba(94, 230, 160, 0.9), rgba(47, 230, 200, 0.9))",
     color: "#04121C",
     boxShadow: "0 0 14px rgba(94, 230, 160, 0.24)",
+  },
+  beaconButton: {
+    border: "1px solid rgba(255, 176, 46, 0.5)",
+    borderRadius: 999,
+    padding: "9px 13px",
+    background: "rgba(255, 176, 46, 0.12)",
+    color: "#FFE2A6",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
+  beaconButtonActive: {
+    background: "linear-gradient(135deg, #FFD36E, #FFB02E)",
+    color: "#241303",
+    cursor: "default",
+    boxShadow: "0 0 14px rgba(255, 176, 46, 0.3)",
   },
   narrationLabel: {
     margin: "0 0 6px",
