@@ -123,6 +123,7 @@ const PLANET_AUDIO_FACTS = {
 /* ---------------- Anomalia Copernix (procedural mission) ---------------- */
 const ANOMALY_ID = "anomaly";
 const ANOMALY_STORAGE_KEY = "spacelab_anomaly_discovered";
+const AURORA_STORAGE_KEY = "spacelab_aurora_mission_done";
 /* poza orbitą Jowisza (22.5), przed Saturnem (30), uniesiona nad ekliptyką — dobrze widoczna w Easy Pilot */
 const ANOMALY_POS = new THREE.Vector3(-16.6, 3.1, 22.4);
 
@@ -785,6 +786,147 @@ function Probe({ targetId, planetPositions, onArrive }) {
         <sphereGeometry args={[0.12, 16, 16]} />
         <meshStandardMaterial color="#DDF3FF" emissive="#7FD0FF" emissiveIntensity={1.2} toneMapped={false} />
       </mesh>
+    </group>
+  );
+}
+
+/** Misja „Pogoda kosmiczna": wiatr słoneczny → pole magnetyczne → zorza. Lekka i deterministyczna. */
+function AuroraShow({ step, earthPos }) {
+  const wind = useRef();
+  const windMat = useRef();
+  const arcsGroup = useRef();
+  const arcMats = useRef([]);
+  const auroraGroup = useRef();
+  const auroraN = useRef();
+  const auroraS = useRef();
+
+  const showWind = step === "solarWind" || step === "magnetosphere" || step === "aurora";
+  const showArcs = step === "magnetosphere" || step === "aurora" || step === "done";
+  const showAur = step === "aurora" || step === "done";
+
+  const WIND_N = IS_MOBILE ? 70 : 120;
+  const windSeeds = useMemo(() => {
+    const a = new Float32Array(WIND_N);
+    let s = 99;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    for (let i = 0; i < WIND_N; i++) a[i] = rnd();
+    return a;
+  }, [WIND_N]);
+  const windArr = useMemo(() => new Float32Array(WIND_N * 3), [WIND_N]);
+  const windGeom = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(windArr, 3));
+    return g;
+  }, [windArr]);
+
+  /* dipolowe linie pola magnetycznego (lokalnie wokół Ziemi, oś = y), budowane raz */
+  const arcGeoms = useMemo(() => {
+    const lines = [];
+    const L = EARTH_R * 2.6;
+    const lons = [0, Math.PI / 3, (2 * Math.PI) / 3, Math.PI, (4 * Math.PI) / 3, (5 * Math.PI) / 3];
+    const SEG = 36;
+    for (const lon of lons) {
+      const pts = [];
+      for (let i = 0; i <= SEG; i++) {
+        const th = 0.18 + (Math.PI - 0.36) * (i / SEG);
+        const r = L * Math.sin(th) * Math.sin(th);
+        const ho = r * Math.sin(th);
+        const y = r * Math.cos(th);
+        pts.push(new THREE.Vector3(ho * Math.cos(lon), y, ho * Math.sin(lon)));
+      }
+      lines.push(new THREE.BufferGeometry().setFromPoints(pts));
+    }
+    return lines;
+  }, []);
+
+  useFrame((state, dt) => {
+    const ep = earthPos.current;
+    const t = state.clock.elapsedTime;
+    const k = Math.min(1, dt * 4);
+
+    if (showWind) {
+      for (let i = 0; i < WIND_N; i++) {
+        const p = (t * 0.18 + windSeeds[i]) % 1;
+        const spread = (1 - p) * 0.5;
+        windArr[i * 3] = ep.x * p + Math.cos(i * 1.7) * spread;
+        windArr[i * 3 + 1] = ep.y * p + Math.sin(p * 6.28 + i) * 0.22 + (windSeeds[i] - 0.5) * 0.7 * spread;
+        windArr[i * 3 + 2] = ep.z * p + Math.sin(i * 1.7) * spread;
+      }
+      windGeom.attributes.position.needsUpdate = true;
+    }
+    if (windMat.current) {
+      const target = showWind ? (IS_MOBILE ? 0.8 : 0.95) : 0;
+      windMat.current.opacity += (target - windMat.current.opacity) * k;
+    }
+
+    if (arcsGroup.current) {
+      arcsGroup.current.position.copy(ep);
+      arcsGroup.current.rotation.set(0, t * 0.05, 0.2); // wolny obrót + przechył osi magnetycznej
+    }
+    for (const m of arcMats.current) {
+      if (m) m.opacity += ((showArcs ? 0.5 : 0) - m.opacity) * k;
+    }
+
+    if (auroraGroup.current) {
+      auroraGroup.current.position.copy(ep);
+      auroraGroup.current.rotation.y = t * 0.25;
+    }
+    const shimmer = 0.55 + 0.25 * Math.sin(t * 2.2);
+    [auroraN.current, auroraS.current].forEach((grp, gi) => {
+      if (!grp) return;
+      grp.children.forEach((child, ci) => {
+        if (!child.material) return;
+        const base = ci === 0 ? 1 : 0.55;
+        const target = showAur ? shimmer * base : 0;
+        child.material.opacity += (target - child.material.opacity) * Math.min(1, dt * 3);
+      });
+      const sc = 1 + 0.05 * Math.sin(t * 2.2 + gi);
+      grp.scale.set(sc, 1, sc);
+    });
+  });
+
+  const ringY = EARTH_R * 0.8;
+  const ringR = EARTH_R * 0.55;
+
+  return (
+    <group>
+      {/* wiatr słoneczny: punkty Słońce(0,0,0) → Ziemia */}
+      <points ref={wind} geometry={windGeom} raycast={() => null}>
+        <pointsMaterial ref={windMat} size={0.13} color="#FFE3B0" transparent opacity={0} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
+      </points>
+
+      {/* pole magnetyczne: dipolowe łuki wokół Ziemi */}
+      <group ref={arcsGroup}>
+        {arcGeoms.map((g, i) => (
+          <line key={i} geometry={g} raycast={() => null}>
+            <lineBasicMaterial ref={(m) => { arcMats.current[i] = m; }} color="#5FC6FF" transparent opacity={0} depthWrite={false} />
+          </line>
+        ))}
+      </group>
+
+      {/* zorza: owale świetlne nad biegunami */}
+      <group ref={auroraGroup}>
+        <group ref={auroraN} position={[0, ringY, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <mesh raycast={() => null}>
+            <torusGeometry args={[ringR, 0.05, 10, 64]} />
+            <meshBasicMaterial color="#5EE6A0" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+          </mesh>
+          <mesh raycast={() => null} scale={1.35}>
+            <torusGeometry args={[ringR, 0.03, 10, 64]} />
+            <meshBasicMaterial color="#7FE8FF" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+          </mesh>
+        </group>
+        <group ref={auroraS} position={[0, -ringY, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <mesh raycast={() => null}>
+            <torusGeometry args={[ringR, 0.05, 10, 64]} />
+            <meshBasicMaterial color="#5EE6A0" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+          </mesh>
+          <mesh raycast={() => null} scale={1.35}>
+            <torusGeometry args={[ringR, 0.03, 10, 64]} />
+            <meshBasicMaterial color="#7FE8FF" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+          </mesh>
+        </group>
+      </group>
     </group>
   );
 }
@@ -1998,6 +2140,12 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   const probeKey = useRef(0);
   const [debugOpen, setDebugOpen] = useState(false);
   const [debugNote, setDebugNote] = useState("");
+  const [auroraPanelOpen, setAuroraPanelOpen] = useState(false);
+  const [auroraStep, setAuroraStep] = useState("idle"); // idle | solarWind | magnetosphere | aurora | done
+  const [auroraMissionDone, setAuroraMissionDone] = useState(() => {
+    try { return window.localStorage.getItem(AURORA_STORAGE_KEY) === "true"; } catch { return false; }
+  });
+  const auroraTimers = useRef([]);
 
   const clock = useRef({ t: 0 });
   const earthPos = useRef(new THREE.Vector3(EARTH_ORBIT_R, 0, 0));
@@ -2131,6 +2279,12 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   }, [anomalyDiscovered]);
 
   useEffect(() => () => { if (anomalyTimer.current) window.clearTimeout(anomalyTimer.current); }, []);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(AURORA_STORAGE_KEY, auroraMissionDone ? "true" : "false"); } catch { /* bez zapisu */ }
+  }, [auroraMissionDone]);
+
+  useEffect(() => () => { auroraTimers.current.forEach((id) => window.clearTimeout(id)); }, []);
 
   useEffect(() => {
     try { window.localStorage.setItem(PROBE_STORAGE_KEY, JSON.stringify(probeMissions)); } catch { /* bez zapisu */ }
@@ -2306,6 +2460,37 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     showToast(`🛰️ Sonda dotarła do: ${BODY_INFO[id]?.name || id}`);
   }, [showToast]);
 
+  /* ---------- Misja: Pogoda kosmiczna / Zorza ---------- */
+  const clearAuroraTimers = () => {
+    auroraTimers.current.forEach((id) => window.clearTimeout(id));
+    auroraTimers.current = [];
+  };
+  const openAurora = () => {
+    setSelectedId(null);
+    setAuroraPanelOpen(true);
+    setCameraMode("earth"); // bezpieczne skupienie na Ziemi (istniejący tryb)
+  };
+  const closeAurora = () => {
+    clearAuroraTimers();
+    setAuroraStep("idle");
+    setAuroraPanelOpen(false);
+  };
+  const runAuroraShow = () => {
+    clearAuroraTimers();
+    setCameraMode("earth");
+    setAuroraStep("solarWind");
+    auroraTimers.current.push(window.setTimeout(() => setAuroraStep("magnetosphere"), 2600));
+    auroraTimers.current.push(window.setTimeout(() => setAuroraStep("aurora"), 5200));
+    auroraTimers.current.push(window.setTimeout(() => {
+      setAuroraStep("done");
+      setAuroraMissionDone(true);
+      showToast("🌌 Odznaka zdobyta: Łowca Zorzy!");
+    }, 8200));
+  };
+  const speakAurora = () => {
+    speakPolish("Słońce wysyła niewidzialny wiatr. Ziemia ma tarczę magnetyczną. Cząstki lecą ku biegunom i tam rozświetlają niebo. Tak powstaje zorza.");
+  };
+
   /* ---------- Panel testowy: resety i skróty demo ---------- */
   const TERRA_REFRESH_NOTE = "Odśwież stronę, aby zobaczyć pełny reset Terra";
 
@@ -2341,13 +2526,16 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   };
   const debugResetAll = () => {
     if (typeof window !== "undefined" && !window.confirm("Na pewno zresetować cały postęp?")) return;
-    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY].forEach(lsRemove);
+    [PLANET_DISCOVERY_STORAGE_KEY, PROBE_STORAGE_KEY, ANOMALY_STORAGE_KEY, AURORA_STORAGE_KEY, TERRA_DISCOVERED_KEY, TERRA_BEACONS_KEY, SHARED_BADGES_KEY].forEach(lsRemove);
     setDiscoveredPlanets([]);
     setProbeMissions({});
     setActiveProbe(null);
     setLastProbeArrival(null);
     setAnomalyDiscovered(false);
     setAnomalyScanState("idle");
+    clearAuroraTimers();
+    setAuroraStep("idle");
+    setAuroraMissionDone(false);
     setDebugNote(`Zresetowano wszystko. ${TERRA_REFRESH_NOTE}`);
   };
 
@@ -2374,6 +2562,8 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     lsSet(ANOMALY_STORAGE_KEY, "true");
     setAnomalyDiscovered(true);
     setAnomalyScanState("done");
+    lsSet(AURORA_STORAGE_KEY, "true");
+    setAuroraMissionDone(true);
     lsSet(TERRA_DISCOVERED_KEY, JSON.stringify(DEBUG_TERRA_IDS));
     lsSet(TERRA_BEACONS_KEY, JSON.stringify(DEBUG_TERRA_IDS));
     debugMergeBadges();
@@ -2450,7 +2640,12 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
 
   const allDone = completed.length >= MISSIONS.length;
   const anomalyCardOpen = selectedId === ANOMALY_ID;
-  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || descentOpen || badgesOpen || detectFlash;
+  const auroraRunning = auroraStep === "solarWind" || auroraStep === "magnetosphere" || auroraStep === "aurora";
+  const auroraPhaseLabel =
+    auroraStep === "solarWind" ? "Wiatr słoneczny"
+      : auroraStep === "magnetosphere" ? "Pole magnetyczne Ziemi"
+        : auroraStep === "aurora" ? "Zorza polarna" : "";
+  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || descentOpen || badgesOpen || detectFlash;
   const showSceneLabels = phase === "play" && !majorOverlayOpen;
   /* subtelny dryf kamery tylko w spoczynku: brak zaznaczonej planety, brak Terra/overlay, brak modala */
   const idleDrift = phase === "play" && cameraMode === "free" && !selectedId && !majorOverlayOpen;
@@ -2500,6 +2695,9 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
             planetPositions={planetPositions}
             onArrive={onProbeArrive}
           />
+        )}
+        {auroraPanelOpen && auroraStep !== "idle" && (
+          <AuroraShow step={auroraStep} earthPos={earthPos} />
         )}
         <SolarPlanets
           clock={clock}
@@ -2635,6 +2833,10 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                 <span style={{ fontSize: 18 }}>{probeResearcherBadge ? "🛰️" : "🔒"}</span>
                 <span>{probeResearcherBadge ? "Badacz Planet" : `Badacz Planet — ${probePlanetsCount}/3 planet`}</span>
               </div>
+              <div style={{ ...S.panelBadge, ...(auroraMissionDone ? S.panelBadgeDone : {}) }}>
+                <span style={{ fontSize: 18 }}>{auroraMissionDone ? "🌌" : "🔒"}</span>
+                <span>{auroraMissionDone ? "Łowca Zorzy" : "Łowca Zorzy — uruchom pokaz pogody kosmicznej"}</span>
+              </div>
               <input style={S.pilotInput} value={pilot} maxLength={14} onChange={(e) => setPilot(e.target.value)} aria-label="Imię pilota" />
             </div>
           )}
@@ -2660,6 +2862,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
               style={{ ...S.dockTextBtn, ...(easyPilotEnabled ? S.dockBtnActive : {}) }}
             >
               🎮 Easy Pilot
+            </button>
+            <button
+              onClick={() => (auroraPanelOpen ? closeAurora() : openAurora())}
+              title="Pokaz: Słońce → wiatr słoneczny → pole magnetyczne → zorza"
+              className="cx-dock-text-btn"
+              style={{ ...S.dockTextBtn, ...(auroraPanelOpen ? S.dockBtnActive : {}) }}
+            >
+              🌌 Pogoda kosmiczna
             </button>
             <span className="cx-dock-divider" style={S.dockDivider} />
             <button
@@ -2755,6 +2965,34 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
                   </button>
                 </>
               )}
+            </div>
+          )}
+
+          {/* PANEL MISJI — Pogoda kosmiczna / Zorza */}
+          {auroraPanelOpen && (
+            <div style={S.auroraPanel}>
+              <button style={S.infoClose} onClick={closeAurora}>✕</button>
+              <div style={S.infoName}>🌌 Pogoda kosmiczna: Zorza Polarna</div>
+              {auroraMissionDone && !auroraRunning && auroraStep !== "done" && (
+                <div style={S.infoDiscovered}>✅ Pokaz zorzy ukończony</div>
+              )}
+              <div style={S.infoFact}>
+                💡 Słońce wysyła w przestrzeń wiatr słoneczny. Pole magnetyczne Ziemi kieruje część cząstek ku biegunom. Tam powstaje zorza.
+              </div>
+              {auroraRunning && (
+                <div style={S.auroraPhase}>▷ {auroraPhaseLabel}</div>
+              )}
+              {auroraStep === "done" && (
+                <div style={S.infoDiscovered}>🌌 Pokaz zakończony. Zorza powstała nad biegunami.</div>
+              )}
+              <div style={S.auroraActions}>
+                {!auroraRunning && (
+                  <button style={S.probeBtn} onClick={runAuroraShow}>
+                    {auroraMissionDone || auroraStep === "done" ? "▶ Pokaż ponownie" : "▶ Uruchom pokaz"}
+                  </button>
+                )}
+                <button style={S.auroraNarrate} onClick={speakAurora}>🔊 Luna wyjaśnia</button>
+              </div>
             </div>
           )}
 
@@ -2966,6 +3204,26 @@ const S = {
     border: "none", cursor: "pointer", fontWeight: 900, fontSize: 13.5,
     background: "linear-gradient(135deg, #2FE6C8, #1FB8E0)", color: "#04121C",
     boxShadow: "0 0 14px rgba(47,230,200,0.32)",
+  },
+
+  /* PANEL MISJI: POGODA KOSMICZNA / ZORZA */
+  auroraPanel: {
+    position: "absolute", right: 14, bottom: 80, width: 290, maxWidth: "calc(100vw - 28px)",
+    background: "rgba(8,10,28,0.9)", backdropFilter: "blur(8px)",
+    border: "1px solid rgba(94,230,160,0.45)", borderRadius: 14,
+    padding: "12px 14px 12px", zIndex: 12,
+    boxShadow: "0 0 22px rgba(94,230,160,0.22), 0 6px 24px rgba(0,0,0,0.5)",
+  },
+  auroraPhase: {
+    marginTop: 8, display: "inline-block", padding: "5px 10px", borderRadius: 999,
+    background: "rgba(95,198,255,0.12)", border: "1px solid rgba(95,198,255,0.4)",
+    color: "#CFE9FF", fontSize: 12.5, fontWeight: 900,
+  },
+  auroraActions: { marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 },
+  auroraNarrate: {
+    flex: "1 1 auto", padding: "9px 10px", borderRadius: 10, cursor: "pointer",
+    border: "1px solid rgba(159,182,212,0.32)", background: "rgba(12,20,48,0.78)",
+    color: "#E6EEF8", fontWeight: 900, fontSize: 13,
   },
 
   /* KAMERA REAKTYWNA */
