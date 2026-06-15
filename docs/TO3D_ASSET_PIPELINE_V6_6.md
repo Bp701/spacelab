@@ -96,6 +96,60 @@ Duże assety powinny trafić do osobnego procesu assetowego, nie do głównej sc
 - Automatyczne modele mogą mieć problemy z licencją lub podobieństwem do źródłowego zdjęcia.
 - Włączenie ciężkiego modelu do głównej sceny może zepsuć obecny SpaceLab flow.
 
+## V6.6.1 Safe Preview Loader
+
+Asset LAB ma teraz opcjonalny, bezpieczny podgląd GLB oparty o istniejące zależności `@react-three/fiber` i `@react-three/drei`. Loader używa `useGLTF`, ale działa tylko wtedy, gdy wybrany wpis manifestu ma niepuste pole `file`.
+
+### Jak działa ładowanie GLB
+
+1. Asset LAB otwiera się jako osobny overlay.
+2. Lista assetów pochodzi z `src/assetlab/assetManifest.js`.
+3. Jeśli wpis ma `file: ""`, viewer pokazuje komunikat placeholder.
+4. Jeśli wpis ma `file`, viewer tworzy lekki podgląd w Canvas i próbuje wczytać GLB.
+5. W czasie ładowania pokazuje status `Ładowanie modelu GLB...`.
+6. Po sukcesie pokazuje `Podgląd GLB aktywny`.
+7. Przy błędzie pokazuje komunikat błędu w panelu, a aplikacja nie powinna się wysypać.
+
+### Gdy plik nie istnieje
+
+Jeśli manifest wskazuje plik, którego nie ma w `public/assets3d/lab/`, Asset LAB przełączy podgląd w stan błędu. To jest oczekiwane zachowanie testowe. Brak albo uszkodzony GLB nie może zatrzymać SpaceLab.
+
+### Jak dodać jeden mały testowy GLB
+
+1. Przygotuj plik poniżej 3 MB.
+2. Upewnij się, że tekstury mają maksymalnie 1024 px.
+3. Nazwij plik bez spacji i polskich znaków, np. `copernix-probe-v001.glb`.
+4. Umieść go w `public/assets3d/lab/copernix-probe-v001.glb`.
+5. Dopisz wpis w `src/assetlab/assetManifest.js`:
+
+```js
+{
+  id: "copernix-probe-v001",
+  name: "Copernix Probe v001",
+  file: "copernix-probe-v001.glb",
+  type: "glb",
+  status: "lab",
+  description: "Pierwszy mały testowy model GLB w Asset LAB."
+}
+```
+
+6. Testuj model tylko w Asset LAB, nie w głównej scenie.
+
+### Mobile safety checklist
+
+- Szerokość testowa: około 390 px.
+- Pierwszy GLB poniżej 3 MB.
+- Jeden model naraz.
+- Tekstury maksymalnie 1024 px.
+- Brak dużych skanów fotogrametrycznych.
+- Sprawdź, czy overlay nadal da się zamknąć.
+- Sprawdź, czy po zamknięciu SpaceLab dalej działa.
+- Sprawdź, czy Terra Mode i Badge Gallery nadal działają.
+
+### Rollback rule
+
+Jeśli model psuje płynność, powoduje czarny ekran albo zawiesza mobile, najpierw usuń lub wyczyść wpis `file` w `assetManifest.js`. Nie zaczynaj od przerabiania głównej sceny. Asset LAB ma być bezpiecznym bezpiecznikiem: manifest decyduje, czy model w ogóle próbuje się ładować.
+
 ## Plan integracji
 
 Faza LAB:
