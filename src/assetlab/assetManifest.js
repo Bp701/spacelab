@@ -15,4 +15,12 @@ export const ASSET_LAB_ITEMS = [
     status: "planned",
     description: "Wpis testowy dla przyszłego małego modelu GLB.",
   },
+  {
+    id: "copernix-probe-v001",
+    name: "Sonda Copernix v001",
+    file: "/assets3d/lab/copernix-probe-v001.glb",
+    type: "glb",
+    status: "test",
+    description: "Pierwszy lekki proceduralny model GLB dla Asset LAB.",
+  },
 ];

@@ -171,3 +171,69 @@ Faza gameplay:
 ## Obecny status V6.6
 
 Asset LAB jest trybem eksperymentalnym. W tej wersji viewer jest placeholder-only i nie ładuje jeszcze GLB. Dzięki temu pipeline jest bezpieczny, lekki i nie wpływa na planety, Terra Mode, Aurorę, City Builder, Badge Gallery, Debug Panel ani Guided Demo.
+
+## V6.6.3 First Micro GLB Test Asset
+
+Pierwszy realny, lekki model GLB w Asset LAB. Powstał w pełni proceduralnie, lokalnie i offline — żeby sprawdzić ścieżkę podglądu GLB na prawdziwym pliku, bez żadnych zewnętrznych assetów.
+
+### Dane modelu
+
+- Nazwa: **Sonda Copernix v001**
+- Plik: `public/assets3d/lab/copernix-probe-v001.glb`
+- Wpis w manifeście: `id: "copernix-probe-v001"`, `type: "glb"`, `status: "test"`
+- Generowany proceduralnie skryptem: `scripts/generate-copernix-probe-v001.mjs`
+
+### Z czego się składa
+
+Niskopoligonowa, czytelna sonda zbudowana wyłącznie z brył podstawowych (box, cylinder, sphere, cone):
+- centralny korpus (grafit/ciemny szary),
+- dwa panele słoneczne na ramionach (granat/niebieski),
+- maszt anteny z jasnoszarą końcówką,
+- akcent cyan/teal (pasek + sensor),
+- mały dysz/thruster z tyłu.
+
+Kolory są płaskie (flat shading), bez tekstur obrazkowych.
+
+### Pochodzenie i licencja
+
+- 100% proceduralny — geometria budowana w kodzie.
+- Brak modeli z Sketchfab, Poly Pizza, NASA ani innych źródeł third-party.
+- Brak pobierania z internetu (skrypt działa offline).
+- Brak tekstur, brak animacji.
+- Czysty licencyjnie — model należy do projektu.
+
+### Generacja (eksport GLB)
+
+Eksport używa `GLTFExporter` z Three.js w trybie binarnym. Ponieważ skrypt działa w Node (bez DOM), dołączony jest minimalny offline polyfill `FileReader` oparty na natywnym `Blob.arrayBuffer()` — bez nowych zależności i bez sieci.
+
+Regeneracja:
+
+```
+node scripts/generate-copernix-probe-v001.mjs
+```
+
+### Limity mobilne (oczekiwane)
+
+- Rozmiar pliku: ~22 KB (cel < 200 KB, twardy limit < 1 MB) — z dużym zapasem.
+- Bez tekstur (0 obrazów), bez animacji.
+- Niska liczba wierzchołków (kilka brył) — bezpieczne dla telefonów ~390px.
+- Ładowany tylko po otwarciu Asset LAB i wybraniu modelu (lazy), nie w głównej scenie.
+
+### Jak usunąć model, jeśli powoduje problemy z wydajnością
+
+1. W `src/assetlab/assetManifest.js` wyczyść pole `file` we wpisie `copernix-probe-v001` (ustaw `file: ""`) — viewer przestanie próbować go ładować i pokaże komunikat o braku modelu. To najszybszy bezpiecznik, bez ruszania głównej sceny.
+2. Opcjonalnie usuń cały wpis `copernix-probe-v001` z manifestu.
+3. Opcjonalnie usuń plik `public/assets3d/lab/copernix-probe-v001.glb` (można go odtworzyć skryptem).
+
+Nigdy nie zaczynaj od modyfikacji głównej sceny Solar System / Terra — manifest jest jedynym przełącznikiem.
+
+### Checklista testów
+
+- [ ] `npm run build` przechodzi.
+- [ ] Asset LAB otwiera się z doku (przycisk „🧊 Asset LAB").
+- [ ] Wpis „Sonda Copernix v001" jest na liście (status `test`).
+- [ ] Po wybraniu modelu podgląd GLB ładuje się i obraca.
+- [ ] Wpisy placeholder / planned nadal nie wywołują crasha (pokazują „Brak modelu").
+- [ ] Przycisk zamknięcia działa.
+- [ ] Główna scena SpaceLab, Terra Mode i Badge Gallery działają jak wcześniej.
+- [ ] Layout mobilny ~390px jest czytelny.
