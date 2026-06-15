@@ -109,7 +109,40 @@ export default function AssetViewer({ onClose }) {
                 <dt style={styles.metaLabel}>Plik</dt>
                 <dd style={styles.metaValue}>{selectedAsset?.file || "nie ustawiono"}</dd>
               </div>
+              <div style={styles.metaItem}>
+                <dt style={styles.metaLabel}>Rozmiar pliku</dt>
+                <dd style={styles.metaValue}>{formatFileSize(selectedAsset?.fileSizeKb)}</dd>
+              </div>
+              <div style={styles.metaItem}>
+                <dt style={styles.metaLabel}>Źródło</dt>
+                <dd style={styles.metaValue}>{metaText(selectedAsset?.sourceType)}</dd>
+              </div>
+              <div style={styles.metaItem}>
+                <dt style={styles.metaLabel}>Licencja</dt>
+                <dd style={styles.metaValue}>{metaText(selectedAsset?.license)}</dd>
+              </div>
+              <div style={styles.metaItem}>
+                <dt style={styles.metaLabel}>Tekstury</dt>
+                <dd style={styles.metaValue}>{metaText(selectedAsset?.textureStatus)}</dd>
+              </div>
+              <div style={styles.metaItem}>
+                <dt style={styles.metaLabel}>Test mobilny</dt>
+                <dd style={{ ...styles.metaValue, ...statusColor(selectedAsset?.mobileStatus) }}>
+                  {metaText(selectedAsset?.mobileStatus)}
+                </dd>
+              </div>
+              <div style={styles.metaItem}>
+                <dt style={styles.metaLabel}>Jakość (gate)</dt>
+                <dd style={{ ...styles.metaValue, ...statusColor(selectedAsset?.qualityStatus) }}>
+                  {metaText(selectedAsset?.qualityStatus)}
+                </dd>
+              </div>
             </dl>
+
+            <div style={styles.fallbackBox}>
+              <p style={styles.fallbackLabel}>Fallback / rollback</p>
+              <p style={styles.fallbackValue}>{metaText(selectedAsset?.fallback)}</p>
+            </div>
 
             <p style={styles.description}>{selectedAsset?.description}</p>
           </article>
@@ -122,6 +155,24 @@ export default function AssetViewer({ onClose }) {
 function normalizeModelFile(file) {
   if (!file) return "";
   return file.startsWith("/") ? file : `/assets3d/lab/${file}`;
+}
+
+// Quality gate helpers: render metadata safely even when a field is missing.
+function metaText(value) {
+  if (value === null || value === undefined || value === "") return "nie ustawiono";
+  return String(value);
+}
+
+function formatFileSize(kb) {
+  if (kb === null || kb === undefined || Number.isNaN(Number(kb))) return "nie ustawiono";
+  return `${kb} KB`;
+}
+
+function statusColor(status) {
+  if (status === "passed") return { color: "#5EE6A0" };
+  if (status === "failed") return { color: "#FF7A6B" };
+  if (status === "pending") return { color: "#FFB02E" };
+  return {};
 }
 
 class ModelErrorBoundary extends Component {
@@ -415,6 +466,29 @@ const styles = {
     color: "#E6EEF8",
     fontSize: 13,
     fontWeight: 800,
+    overflowWrap: "anywhere",
+  },
+  fallbackBox: {
+    margin: "12px 0 0",
+    border: "1px solid rgba(255, 176, 46, 0.3)",
+    borderRadius: 12,
+    padding: 10,
+    background: "rgba(36, 22, 6, 0.45)",
+  },
+  fallbackLabel: {
+    margin: 0,
+    color: "#FFB02E",
+    fontSize: 11,
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  fallbackValue: {
+    margin: "5px 0 0",
+    color: "#FFE2A6",
+    fontSize: 13,
+    fontWeight: 700,
+    lineHeight: 1.45,
     overflowWrap: "anywhere",
   },
   description: {

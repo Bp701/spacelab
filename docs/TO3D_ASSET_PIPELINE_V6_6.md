@@ -237,3 +237,63 @@ Nigdy nie zaczynaj od modyfikacji głównej sceny Solar System / Terra — manif
 - [ ] Przycisk zamknięcia działa.
 - [ ] Główna scena SpaceLab, Terra Mode i Badge Gallery działają jak wcześniej.
 - [ ] Layout mobilny ~390px jest czytelny.
+
+## V6.6.4 Asset LAB Quality Gate
+
+Warstwa kontroli jakości dla Asset LAB. Każdy asset 3D musi czytelnie pokazywać
+pochodzenie, licencję, rozmiar pliku, stan tekstur, status testu mobilnego oraz
+status jakości i instrukcję fallback. To zadanie metadata/UI/dokumentacja — nie
+dodaje nowych modeli GLB, nie zmienia gameplayu.
+
+### Po co quality gate
+
+- Zanim jakikolwiek asset zbliży się do gameplayu, musi przejść świadomą kontrolę.
+- Brak metadanych = brak akceptacji. Pole „nie ustawiono" to sygnał ostrzegawczy.
+- Quality gate chroni mobile (GPU, pamięć, płynność) i chroni projekt prawnie
+  (jasna licencja, brak podejrzanych źródeł).
+- Manifest pozostaje jedynym bezpiecznikiem: wyczyszczenie pola `file` natychmiast
+  wyłącza ładowanie modelu, bez ruszania głównej sceny.
+
+### Jakie metadane trzeba śledzić
+
+Każdy wpis w `src/assetlab/assetManifest.js` powinien deklarować:
+
+- `sourceType` — `"procedural" | "cc0" | "cc-by" | "unknown"`
+- `license` — czytelny opis licencji (lub `null`)
+- `fileSizeKb` — rozmiar pliku w KB (`number | null`)
+- `textureStatus` — `"none" | "512" | "1024" | "unknown"`
+- `mobileStatus` — `"pending" | "passed" | "failed"`
+- `qualityStatus` — `"test" | "passed" | "failed"`
+- `fallback` — instrukcja, co zrobić, gdy asset sprawia problemy (lub `null`)
+
+Pola są opcjonalne — viewer pokazuje „nie ustawiono", gdy ich brak, więc wpisy
+placeholder nigdy się nie wysypują.
+
+### Jak zaakceptować asset (approve)
+
+1. Uzupełnij wszystkie pola metadanych w manifeście (żadne nie powinno być puste).
+2. Sprawdź licencję i pochodzenie (patrz `docs/ASSET_SOURCING_AND_CREDITS.md`).
+3. Otwórz Asset LAB, wybierz model, potwierdź, że GLB ładuje się i obraca.
+4. Wykonaj test mobilny (~390px). Po sukcesie ustaw `mobileStatus: "passed"`.
+5. Gdy wszystko jest czyste, ustaw `qualityStatus: "passed"`.
+
+### Jak odrzucić / wyłączyć asset (fail/disable)
+
+1. Ustaw `qualityStatus: "failed"` (i `mobileStatus: "failed"`, jeśli to problem mobilny).
+2. Wyczyść pole `file` (`file: ""`) — viewer przestanie próbować ładować model.
+3. Opcjonalnie usuń cały wpis lub plik GLB.
+4. Nigdy nie zaczynaj od modyfikacji głównej sceny — manifest jest przełącznikiem.
+
+### Reguła testu mobilnego
+
+Asset nie może dostać `qualityStatus: "passed"`, dopóki nie przejdzie testu na
+szerokości około 390px: bez czarnego ekranu, bez utraty sterowania, bez widocznego
+spadku płynności. Dopóki test mobilny się nie odbył, `mobileStatus` zostaje
+`"pending"`.
+
+### Reguła legalnego pochodzenia
+
+- Preferowane są assety proceduralne / wewnętrzne (`sourceType: "procedural"`).
+- Dozwolone tylko źródła z jasną licencją (CC0, CC-BY z atrybucją).
+- Żaden pobrany model bez dowodu licencji nie wchodzi do manifestu.
+- Szczegóły i zakazane źródła: `docs/ASSET_SOURCING_AND_CREDITS.md`.
