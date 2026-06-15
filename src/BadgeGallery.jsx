@@ -143,9 +143,10 @@ export default function BadgeGallery({ onClose }) {
   ];
 
   return (
-    <div style={S.overlay} aria-label="Galeria odznak i postęp">
-      <div style={S.panel}>
-        <button type="button" style={S.close} onClick={onClose} aria-label="Zamknij">✕</button>
+    <div className="badge-gallery-overlay" style={S.overlay} aria-label="Galeria odznak i postęp">
+      <style>{badgeGalleryResponsiveCss}</style>
+      <div className="badge-gallery-panel" style={S.panel}>
+        <button className="badge-gallery-close" type="button" style={S.close} onClick={onClose} aria-label="Zamknij">✕</button>
         <div style={S.title}>🏅 Odznaki i Postęp</div>
         <div style={S.mood}>{mood}</div>
 
@@ -195,13 +196,53 @@ export default function BadgeGallery({ onClose }) {
         ))}
 
         <div style={S.footer}>
-          <button type="button" style={S.refreshBtn} onClick={refresh}>🔄 Odśwież postęp</button>
-          <button type="button" style={S.closeBtn} onClick={onClose}>Zamknij</button>
+          <button className="badge-gallery-action" type="button" style={S.refreshBtn} onClick={refresh}>🔄 Odśwież postęp</button>
+          <button className="badge-gallery-action" type="button" style={S.closeBtn} onClick={onClose}>Zamknij</button>
         </div>
       </div>
     </div>
   );
 }
+
+const badgeGalleryResponsiveCss = `
+  @media (max-width: 640px) {
+    .badge-gallery-overlay {
+      align-items: stretch !important;
+      justify-content: flex-start !important;
+      padding: 8px !important;
+      overflow-x: hidden !important;
+    }
+
+    .badge-gallery-panel {
+      width: 100% !important;
+      max-width: calc(100vw - 16px) !important;
+      max-height: calc(100dvh - 16px) !important;
+      padding: 14px !important;
+      border-radius: 14px !important;
+      overflow-x: hidden !important;
+    }
+
+    .badge-gallery-close {
+      width: 44px !important;
+      height: 44px !important;
+      padding: 0 !important;
+      border-radius: 999px !important;
+      background: rgba(12, 20, 48, 0.78) !important;
+      border: 1px solid rgba(159, 182, 212, 0.32) !important;
+      font-size: 18px !important;
+      touch-action: manipulation !important;
+    }
+
+    .badge-gallery-panel [style*="grid-template-columns"] {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .badge-gallery-action {
+      min-height: 44px !important;
+      touch-action: manipulation !important;
+    }
+  }
+`;
 
 const S = {
   overlay: {

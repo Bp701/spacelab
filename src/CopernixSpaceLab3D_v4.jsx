@@ -2462,15 +2462,23 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           display: none !important;
         }
         .cx-dock {
-          bottom: 18px !important;
+          bottom: max(8px, env(safe-area-inset-bottom)) !important;
           display: grid !important;
           grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-          width: calc(100vw - 20px) !important;
-          max-width: 370px !important;
+          width: calc(100vw - 16px) !important;
+          max-width: 382px !important;
+          max-height: min(42dvh, 238px) !important;
+          overflow-y: auto !important;
+          overscroll-behavior: contain !important;
+          align-items: stretch !important;
+          align-content: start !important;
           gap: 5px !important;
-          padding: 6px !important;
+          padding: 8px !important;
           border-radius: 16px !important;
           box-sizing: border-box !important;
+        }
+        .cx-dock::-webkit-scrollbar {
+          display: none;
         }
         .cx-dock-divider,
         .cx-mobile-hide {
@@ -2486,12 +2494,29 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
           line-height: 1.05 !important;
           white-space: normal !important;
           text-align: center !important;
+          touch-action: manipulation !important;
         }
         .cx-controls-hint {
-          bottom: 170px !important;
+          bottom: min(45dvh, 252px) !important;
           max-width: calc(100vw - 20px) !important;
           font-size: 10px !important;
           padding: 5px 8px !important;
+        }
+        .cx-info-card,
+        .cx-aurora-panel {
+          left: 8px !important;
+          right: 8px !important;
+          bottom: min(45dvh, 252px) !important;
+          width: auto !important;
+          max-width: calc(100vw - 16px) !important;
+          max-height: calc(100dvh - min(45dvh, 252px) - 18px) !important;
+          overflow-y: auto !important;
+          box-sizing: border-box !important;
+        }
+        .cx-info-card button,
+        .cx-aurora-panel button {
+          min-height: 44px !important;
+          touch-action: manipulation !important;
         }
       }
     `;
@@ -3338,7 +3363,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
 
           {/* KARTA OBIEKTU — kompaktowa */}
           {selectedInfo && (
-            <div style={S.infoCard}>
+            <div className="cx-info-card" style={S.infoCard}>
               <button style={S.infoClose} onClick={() => setSelectedId(null)}>✕</button>
               <div style={S.infoName}>{selectedInfo.name}</div>
               <div style={S.infoType}>{selectedInfo.type}</div>
@@ -3385,7 +3410,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
 
           {/* KARTA ANOMALII — własny przepływ skanowania */}
           {anomalyCardOpen && (
-            <div style={S.infoCard}>
+            <div className="cx-info-card" style={S.infoCard}>
               <button style={S.infoClose} onClick={() => setSelectedId(null)}>✕</button>
               <div style={S.infoName}>✨ Anomalia Copernix</div>
               <div style={S.infoType}>Nieznany sygnał energetyczny</div>
@@ -3411,7 +3436,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
 
           {/* PANEL MISJI — Pogoda kosmiczna / Zorza */}
           {auroraPanelOpen && (
-            <div style={S.auroraPanel}>
+            <div className="cx-aurora-panel" style={S.auroraPanel}>
               <button style={S.infoClose} onClick={closeAurora}>✕</button>
               <div style={S.infoName}>🌌 Pogoda kosmiczna: Zorza Polarna</div>
               {auroraMissionDone && !auroraRunning && auroraStep !== "done" && (
