@@ -267,7 +267,7 @@ export default function AndromedaBridge({ onClose }) {
           </button>
         </div>
 
-        <div style={styles.path} aria-label="Ścieżka lądowania">
+        <div className="terra-path" style={styles.path} aria-label="Ścieżka lądowania">
           {landingPath.map((step, index) => (
             <span key={step} style={styles.pathStep}>
               {step}
@@ -278,8 +278,8 @@ export default function AndromedaBridge({ onClose }) {
 
         <p style={styles.message}>{terraRecipe.narration.intro}</p>
 
-        <div style={styles.sequencePanel} aria-label="Animowana sekwencja lądowania">
-          <div style={styles.sequenceHeader}>
+        <div className="terra-sequence-panel" style={styles.sequencePanel} aria-label="Animowana sekwencja lądowania">
+          <div className="terra-sequence-header" style={styles.sequenceHeader}>
             <strong style={styles.sequenceTitle}>Sekwencja lądowania Terra v1</strong>
             <button type="button" onClick={startLanding} style={styles.startLandingButton}>
               Start lądowania
@@ -669,10 +669,41 @@ const terraResponsiveCss = `
       box-shadow: 0 0 0 1px rgba(47, 230, 200, 0.18), 0 18px 42px rgba(0, 0, 0, 0.72) !important;
     }
 
+    .terra-panel button,
+    .terra-viewer button {
+      min-height: 44px !important;
+      touch-action: manipulation !important;
+    }
+
+    .terra-panel > div:first-child {
+      gap: 10px !important;
+    }
+
+    .terra-panel > div:first-child > button,
+    .terra-viewer button[aria-label] {
+      width: 44px !important;
+      height: 44px !important;
+      padding: 0 !important;
+      font-size: 18px !important;
+    }
+
     .terra-title {
       font-size: 27px !important;
       line-height: 1.08 !important;
       overflow-wrap: anywhere !important;
+    }
+
+    .terra-path,
+    .terra-sequence-panel {
+      margin-top: 14px !important;
+    }
+
+    .terra-sequence-header {
+      align-items: stretch !important;
+    }
+
+    .terra-sequence-panel button {
+      width: 100% !important;
     }
 
     .terra-targets {
@@ -686,6 +717,29 @@ const terraResponsiveCss = `
       flex: 1 1 100% !important;
       min-width: 0 !important;
       width: 100% !important;
+    }
+
+    .terra-card button,
+    .terra-panel article[tabindex="-1"] button {
+      width: 100% !important;
+      justify-content: center !important;
+    }
+
+    .terra-viewer {
+      align-items: stretch !important;
+      padding: 8px !important;
+    }
+
+    .terra-viewer > div {
+      width: 100% !important;
+      max-width: calc(100vw - 16px) !important;
+      max-height: calc(100dvh - 16px) !important;
+      padding: 12px !important;
+      border-radius: 14px !important;
+    }
+
+    .terra-viewer img {
+      max-height: 48dvh !important;
     }
   }
 `;

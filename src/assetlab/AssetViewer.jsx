@@ -20,14 +20,15 @@ export default function AssetViewer({ onClose }) {
   }, [modelUrl]);
 
   return (
-    <section style={styles.overlay} aria-label="Asset LAB">
-      <div style={styles.panel}>
+    <section className="asset-lab-overlay" style={styles.overlay} aria-label="Asset LAB">
+      <style>{assetViewerResponsiveCss}</style>
+      <div className="asset-lab-panel" style={styles.panel}>
         <header style={styles.header}>
           <div>
             <p style={styles.kicker}>Eksperymentalny moduł LAB</p>
             <h2 style={styles.title}>to3D Asset Pipeline LAB</h2>
           </div>
-          <button type="button" onClick={onClose} style={styles.closeButton} aria-label="Zamknij Asset LAB">
+          <button className="asset-lab-close" type="button" onClick={onClose} style={styles.closeButton} aria-label="Zamknij Asset LAB">
             ✕
           </button>
         </header>
@@ -36,11 +37,12 @@ export default function AssetViewer({ onClose }) {
           Modele 3D nie są jeszcze częścią głównej gry. Ten panel służy tylko do bezpiecznego testowania manifestu i przyszłych lekkich GLB.
         </p>
 
-        <div style={styles.content}>
+        <div className="asset-lab-content" style={styles.content}>
           <aside style={styles.assetList} aria-label="Lista assetów LAB">
             {ASSET_LAB_ITEMS.map((item) => (
               <button
                 key={item.id}
+                className="asset-lab-item"
                 type="button"
                 onClick={() => setSelectedId(item.id)}
                 style={{
@@ -54,7 +56,7 @@ export default function AssetViewer({ onClose }) {
             ))}
           </aside>
 
-          <article style={styles.details}>
+          <article className="asset-lab-details" style={styles.details}>
             <div style={styles.previewBox}>
               {hasModelFile ? (
                 <div style={styles.canvasShell}>
@@ -188,6 +190,51 @@ function PreviewErrorMesh() {
     </mesh>
   );
 }
+
+const assetViewerResponsiveCss = `
+  @media (max-width: 640px) {
+    .asset-lab-overlay {
+      align-items: stretch !important;
+      justify-content: flex-start !important;
+      padding: 8px !important;
+      overflow-x: hidden !important;
+    }
+
+    .asset-lab-panel {
+      width: 100% !important;
+      max-width: calc(100vw - 16px) !important;
+      max-height: calc(100dvh - 16px) !important;
+      padding: 14px !important;
+      border-radius: 14px !important;
+      overflow-x: hidden !important;
+    }
+
+    .asset-lab-close {
+      width: 44px !important;
+      height: 44px !important;
+      font-size: 18px !important;
+      touch-action: manipulation !important;
+    }
+
+    .asset-lab-content {
+      grid-template-columns: minmax(0, 1fr) !important;
+      gap: 12px !important;
+    }
+
+    .asset-lab-item {
+      min-height: 48px !important;
+      touch-action: manipulation !important;
+    }
+
+    .asset-lab-details {
+      min-width: 0 !important;
+    }
+
+    .asset-lab-details dl {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+  }
+`;
 
 const styles = {
   overlay: {
