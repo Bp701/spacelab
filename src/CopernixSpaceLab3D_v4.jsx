@@ -8,6 +8,7 @@ import CityBuilderLite, {
 } from "./CityBuilderLite";
 import BadgeGallery from "./BadgeGallery";
 import AssetViewer from "./assetlab/AssetViewer";
+import MapLab from "./maplab/MapLab";
 
 /* ============================================================
    COPERNIX SPACE LAB 3D — v4 "ŻYWY KOSMOS"
@@ -2371,6 +2372,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
   });
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [assetLabOpen, setAssetLabOpen] = useState(false);
+  const [mapLabOpen, setMapLabOpen] = useState(false);
   const [satelliteScanDone, setSatelliteScanDone] = useState(() => {
     try { return window.localStorage.getItem(SATELLITE_SCAN_KEY) === "true"; } catch { return false; }
   });
@@ -3039,7 +3041,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
     auroraStep === "solarWind" ? "Wiatr słoneczny"
       : auroraStep === "magnetosphere" ? "Pole magnetyczne Ziemi"
         : auroraStep === "aurora" ? "Zorza polarna" : "";
-  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || cityOpen || galleryOpen || assetLabOpen || descentOpen || badgesOpen || detectFlash || (IS_MOBILE && guideActive);
+  const majorOverlayOpen = hideSceneLabels || !!selectedInfo || anomalyCardOpen || auroraPanelOpen || cityOpen || galleryOpen || assetLabOpen || mapLabOpen || descentOpen || badgesOpen || detectFlash || (IS_MOBILE && guideActive);
   const showSceneLabels = phase === "play" && !majorOverlayOpen;
   /* V6.4.1: na telefonie, gdy otwarta karta obiektu, kompaktowy panel misji Dominika (nie zasłania przycisków) */
   const guideCompact = IS_MOBILE && guideActive && (!!selectedInfo || anomalyCardOpen || auroraPanelOpen);
@@ -3325,6 +3327,14 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
             >
               🧊 Asset LAB
             </button>
+            <button
+              onClick={() => setMapLabOpen((o) => !o)}
+              title="Eksperymentalna mapa LAB Olsztyna"
+              className="cx-dock-text-btn"
+              style={{ ...S.dockTextBtn, ...(mapLabOpen ? S.dockBtnActive : {}) }}
+            >
+              🗺️ Mapa LAB
+            </button>
             <span className="cx-dock-divider" style={S.dockDivider} />
             <button
               onClick={toggleVoiceMuted}
@@ -3557,6 +3567,7 @@ export default function CopernixSpaceLab3D({ hideSceneLabels = false }) {
       {/* ================= GALERIA ODZNAK / POSTĘP ================= */}
       {galleryOpen && <BadgeGallery onClose={() => setGalleryOpen(false)} />}
       {assetLabOpen && <AssetViewer onClose={() => setAssetLabOpen(false)} />}
+      {mapLabOpen && <MapLab onClose={() => setMapLabOpen(false)} />}
 
       {/* ================= PANEL TESTOWY (DEBUG) ================= */}
       <button
