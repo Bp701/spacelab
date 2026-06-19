@@ -98,3 +98,44 @@ Ręcznie:
 Jeśli moduł sprawia problemy: usuń przycisk „🗺️ Mapa LAB" z docka oraz render
 `{mapLabOpen && <MapLab .../>}` w `CopernixSpaceLab3D_v4.jsx`. Moduł jest
 izolowany — nie dotyka Terra Mode ani Solar System.
+
+## V6.7.1 — Olsztyn POI Stories
+
+Rozszerzenie Mapa LAB o krótkie, edukacyjne karty-opowieści dla dzieci. Każdy POI
+ma teraz sekcję „🌙 Opowieść Luny", rozwijaną pod kartą informacyjną. Nie dodano
+żadnych zależności (`package.json` / `package-lock.json` bez zmian), nie ruszano
+Asset LAB, Terra Mode ani plików GLB.
+
+### Nowe pola w `olsztynPois.js`
+
+Dla każdego POI:
+
+- `storyTitle` — tytuł krótkiej opowieści
+- `story` — krótka, oryginalna, dziecięco-przyjazna historia / wyjaśnienie
+- `curiosity` — jedna ciekawostka „czy wiesz, że..." napisana od zera
+- `observationTask` — drobne zadanie obserwacyjne do wykonania w realu
+- `childQuestion` — otwarte pytanie pobudzające myślenie dziecka
+- `lunaNarration` — ta sama myśl w ciepłym głosie narratorki Luny
+- `storyStatus` — status redakcyjny, `"draft"` do czasu recenzji
+- `contentSource` — `"internal educational text"`
+
+### Zmiany w `MapLab.jsx`
+
+- Karta POI zyskuje przycisk „🌙 Opowieść Luny" (expand/collapse), domyślnie
+  zwinięty, aby karta startowała kompaktowo (ważne na ~390px).
+- Po rozwinięciu pokazuje: tytuł, opowieść, ciekawostkę, zadanie, pytanie do
+  dziecka oraz narrację Luny.
+- Karta ma teraz `maxHeight` + `overflowY: auto`, więc dłuższy tekst przewija się
+  w obrębie mapy zamiast wychodzić poza ekran.
+- Kliknięcie markera resetuje stan opowieści (każdy POI otwiera się czysto);
+  zachowanie zamykania overlaya i karty pozostaje bez zmian.
+
+### Reguły treści (V6.7.1)
+
+- Cały tekst opowieści jest **oryginalny** i napisany ręcznie na potrzeby SpaceLab.
+- **Nie** kopiujemy treści z Google Maps, Wikipedii, stron turystycznych, opisów
+  OSM, recenzji ani zdjęć.
+- **Brak** twierdzeń medycznych/terapeutycznych.
+- **Brak** obiecywanych efektów nauki (teksty są zabawą i zachętą do obserwacji,
+  nie gwarancją wyniku).
+- Szczegóły i pełna treść: `docs/OLSZTYN_POI_STORIES_V6_7_1.md`.
