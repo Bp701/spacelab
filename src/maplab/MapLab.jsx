@@ -24,6 +24,7 @@ export default function MapLab({ onClose }) {
   const mapRef = useRef(null);
   const [mapError, setMapError] = useState("");
   const [selectedPoi, setSelectedPoi] = useState(null);
+  const [storyOpen, setStoryOpen] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -61,6 +62,7 @@ export default function MapLab({ onClose }) {
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
           setSelectedPoi(poi);
+          setStoryOpen(false);
           map.flyTo({ center: [poi.coordinates.lng, poi.coordinates.lat], zoom: 15, speed: 0.8 });
         });
 
@@ -141,6 +143,50 @@ export default function MapLab({ onClose }) {
                 <p style={styles.cardHint}>
                   <span style={styles.cardHintLabel}>Misja:</span> {selectedPoi.missionHint}
                 </p>
+              )}
+
+              {selectedPoi.story && (
+                <div style={styles.storyWrap}>
+                  <button
+                    type="button"
+                    className="maplab-story-toggle"
+                    onClick={() => setStoryOpen((o) => !o)}
+                    style={styles.storyToggle}
+                    aria-expanded={storyOpen}
+                  >
+                    🌙 Opowieść Luny {storyOpen ? "▲" : "▼"}
+                  </button>
+
+                  {storyOpen && (
+                    <div style={styles.storyBody}>
+                      {selectedPoi.storyTitle && (
+                        <h4 style={styles.storyTitle}>{selectedPoi.storyTitle}</h4>
+                      )}
+                      <p style={styles.storyText}>{selectedPoi.story}</p>
+
+                      {selectedPoi.curiosity && (
+                        <p style={styles.storyRow}>
+                          <span style={styles.storyLabel}>✨ Ciekawostka:</span> {selectedPoi.curiosity}
+                        </p>
+                      )}
+                      {selectedPoi.observationTask && (
+                        <p style={styles.storyRow}>
+                          <span style={styles.storyLabel}>🔭 Zadanie:</span> {selectedPoi.observationTask}
+                        </p>
+                      )}
+                      {selectedPoi.childQuestion && (
+                        <p style={styles.storyRow}>
+                          <span style={styles.storyLabel}>❓ Pytanie:</span> {selectedPoi.childQuestion}
+                        </p>
+                      )}
+                      {selectedPoi.lunaNarration && (
+                        <p style={styles.storyLuna}>
+                          <span style={styles.storyLunaLabel}>🌙 Luna:</span> {selectedPoi.lunaNarration}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -310,6 +356,8 @@ const styles = {
     right: 14,
     bottom: 14,
     maxWidth: 420,
+    maxHeight: "calc(100% - 28px)",
+    overflowY: "auto",
     border: "1px solid rgba(47, 230, 200, 0.5)",
     borderRadius: 14,
     padding: 14,
@@ -370,6 +418,67 @@ const styles = {
     fontWeight: 900,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  storyWrap: {
+    marginTop: 12,
+    borderTop: "1px solid rgba(95, 198, 255, 0.18)",
+    paddingTop: 10,
+  },
+  storyToggle: {
+    width: "100%",
+    minHeight: 44,
+    border: "1px solid rgba(95, 198, 255, 0.4)",
+    borderRadius: 12,
+    padding: "10px 12px",
+    background: "rgba(12, 20, 48, 0.7)",
+    color: "#CFEDE6",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 900,
+    textAlign: "left",
+    touchAction: "manipulation",
+  },
+  storyBody: {
+    marginTop: 10,
+  },
+  storyTitle: {
+    margin: "0 0 8px",
+    color: "#9FD8FF",
+    fontSize: 15,
+    fontWeight: 900,
+    lineHeight: 1.25,
+  },
+  storyText: {
+    margin: 0,
+    color: "#E6EEF8",
+    fontSize: 14,
+    lineHeight: 1.55,
+  },
+  storyRow: {
+    margin: "10px 0 0",
+    color: "#CFEDE6",
+    fontSize: 13.5,
+    lineHeight: 1.5,
+  },
+  storyLabel: {
+    fontWeight: 900,
+    color: "#5EE6A0",
+  },
+  storyLuna: {
+    margin: "12px 0 0",
+    padding: "10px 12px",
+    border: "1px solid rgba(122, 162, 255, 0.34)",
+    borderRadius: 12,
+    background: "rgba(14, 18, 44, 0.6)",
+    color: "#DCE6FF",
+    fontSize: 13.5,
+    fontStyle: "italic",
+    lineHeight: 1.5,
+  },
+  storyLunaLabel: {
+    fontStyle: "normal",
+    fontWeight: 900,
+    color: "#9FB6FF",
   },
   legal: {
     margin: "12px 0 0",
